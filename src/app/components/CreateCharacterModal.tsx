@@ -1,0 +1,153 @@
+"use client";
+
+import { useState } from "react";
+
+interface CreateCharacterModalProps {
+  open: boolean;
+  onClose: () => void;
+  onCreate: (data: {
+    name: string;
+    description: string;
+    base_image_url: string;
+    traits: Record<string, string>;
+  }) => void;
+}
+
+export default function CreateCharacterModal({
+  open,
+  onClose,
+  onCreate,
+}: CreateCharacterModalProps) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [baseImageUrl, setBaseImageUrl] = useState("");
+  const [traits, setTraits] = useState({
+    hair: "",
+    accessories: "",
+    skin: "",
+    expression_default: "neutral",
+    clothing_base: "",
+  });
+
+  if (!open) return null;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onCreate({
+      name: name.trim(),
+      description: description.trim(),
+      base_image_url: baseImageUrl.trim(),
+      traits,
+    });
+    // Reset
+    setName("");
+    setDescription("");
+    setBaseImageUrl("");
+    setTraits({ hair: "", accessories: "", skin: "", expression_default: "neutral", clothing_base: "" });
+  };
+
+  const traitFields = [
+    { key: "hair", label: "Hair", placeholder: "e.g. intricate black box braids" },
+    { key: "skin", label: "Skin", placeholder: "e.g. natural brown skin with freckles" },
+    { key: "accessories", label: "Accessories", placeholder: "e.g. black lace choker necklace" },
+    { key: "clothing_base", label: "Base Clothing", placeholder: "e.g. white ribbed strapless top" },
+    { key: "expression_default", label: "Default Expression", placeholder: "e.g. neutral-seductive" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="bg-surface border border-border-strong rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto animate-fade-in">
+        <div className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="font-serif text-accent text-xl font-semibold">New Character</h2>
+            <button onClick={onClose} className="text-muted hover:text-text transition-colors">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Name */}
+            <div>
+              <label className="block text-sm text-muted mb-1">Name *</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Character name"
+                className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
+                autoFocus
+              />
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="block text-sm text-muted mb-1">Description</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Brief description of the character..."
+                rows={2}
+                className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors resize-none"
+              />
+            </div>
+
+            {/* Base Image URL */}
+            <div>
+              <label className="block text-sm text-muted mb-1">Base Image URL</label>
+              <input
+                type="url"
+                value={baseImageUrl}
+                onChange={(e) => setBaseImageUrl(e.target.value)}
+                placeholder="https://... (anchor identity image)"
+                className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
+              />
+            </div>
+
+            {/* Traits */}
+            <div>
+              <label className="block text-sm text-accent mb-2 font-medium">Character Traits</label>
+              <div className="space-y-3">
+                {traitFields.map((field) => (
+                  <div key={field.key}>
+                    <label className="block text-xs text-muted mb-1">{field.label}</label>
+                    <input
+                      type="text"
+                      value={traits[field.key as keyof typeof traits]}
+                      onChange={(e) =>
+                        setTraits((prev) => ({ ...prev, [field.key]: e.target.value }))
+                      }
+                      placeholder={field.placeholder}
+                      className="w-full bg-bg border border-border rounded-lg px-3 py-1.5 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Buttons */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-2 rounded-lg border border-border text-muted hover:text-text hover:border-border-strong text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!name.trim()}
+                className="flex-1 py-2 rounded-lg bg-accent text-bg font-medium text-sm hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Create Character
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}

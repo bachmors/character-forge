@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { STANDARD_POSES, CATEGORIES, type CategoryId } from "@/lib/prompts";
+import { downloadImage } from "@/lib/imageUtils";
 
 interface CharacterImage {
   _id: string;
@@ -12,20 +13,25 @@ interface CharacterImage {
   prompt_used: string;
   model_used: string;
   selected: boolean;
+  favorite: boolean;
   created_at: string;
 }
 
 interface DatasetGridProps {
   images: CharacterImage[];
+  characterName: string;
   onImageClick: (image: CharacterImage) => void;
   onToggleSelect: (imageId: string, selected: boolean) => void;
+  onToggleFavorite: (imageId: string, favorite: boolean) => void;
   onDeleteImage: (imageId: string) => void;
 }
 
 export default function DatasetGrid({
   images,
+  characterName,
   onImageClick,
   onToggleSelect,
+  onToggleFavorite,
   onDeleteImage,
 }: DatasetGridProps) {
   const [activeCategory, setActiveCategory] = useState<CategoryId | "all">("all");
@@ -49,6 +55,11 @@ export default function DatasetGrid({
 
   const completedCount = checklist.filter((c) => c.completed).length;
   const totalPoses = STANDARD_POSES.length;
+
+  const handleDownload = (image: CharacterImage) => {
+    const filename = `${characterName.replace(/\s+/g, "_")}_${image.subcategory}_${Date.now()}.png`;
+    downloadImage(image.image_url, filename);
+  };
 
   return (
     <div className="p-6 animate-fade-in">
@@ -132,14 +143,12 @@ export default function DatasetGrid({
       {/* Image Grid */}
       {filteredImages.length === 0 ? (
         <div className="text-center py-16">
-          <div className="text-muted/30 text-6xl mb-4">
-            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="mx-auto opacity-30">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <polyline points="21 15 16 10 5 21" />
-            </svg>
-          </div>
-          <p className="text-muted text-sm">No images in this category yet</p>
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="mx-auto opacity-30 text-muted">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <polyline points="21 15 16 10 5 21" />
+          </svg>
+          <p className="text-muted text-sm mt-4">No images in this category yet</p>
           <p className="text-muted/60 text-xs mt-1">
             Go to the Generate tab to create new images
           </p>
@@ -174,8 +183,26 @@ export default function DatasetGrid({
                 <p className="text-xs text-muted truncate">{image.model_used}</p>
               </div>
 
-              {/* Actions */}
+              {/* Actions - top right */}
               <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                {/* Favorite */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleFavorite(image._id, !image.favorite);
+                  }}
+                  className={`w-6 h-6 rounded flex items-center justify-center text-xs transition-colors ${
+                    image.favorite
+                      ? "bg-accent text-bg"
+                      : "bg-black/60 text-white hover:bg-accent hover:text-bg"
+                  }`}
+                  title={image.favorite ? "Remove favorite" : "Set as favorite"}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill={image.favorite ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  </svg>
+                </button>
+                {/* Select */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -192,6 +219,22 @@ export default function DatasetGrid({
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                 </button>
+                {/* Download */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownload(image);
+                  }}
+                  className="w-6 h-6 rounded bg-black/60 text-white hover:bg-accent hover:text-bg flex items-center justify-center transition-colors"
+                  title="Download"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                </button>
+                {/* Delete */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -209,14 +252,23 @@ export default function DatasetGrid({
                 </button>
               </div>
 
-              {/* Selected badge */}
-              {image.selected && (
-                <div className="absolute top-1 left-1 w-5 h-5 rounded-full bg-accent flex items-center justify-center">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-bg">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                </div>
-              )}
+              {/* Badges - top left */}
+              <div className="absolute top-1 left-1 flex gap-1">
+                {image.favorite && (
+                  <div className="w-5 h-5 rounded-full bg-accent flex items-center justify-center">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" className="text-bg">
+                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                    </svg>
+                  </div>
+                )}
+                {image.selected && (
+                  <div className="w-5 h-5 rounded-full bg-accent flex items-center justify-center">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-bg">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>

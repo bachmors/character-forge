@@ -35,6 +35,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Validate image size (base64 data URLs can be large)
+    const imageSizeBytes = Buffer.byteLength(image_url, "utf8");
+    const maxSizeBytes = 4 * 1024 * 1024; // 4MB
+    if (imageSizeBytes > maxSizeBytes) {
+      return NextResponse.json(
+        {
+          error: `Image too large (${(imageSizeBytes / 1024 / 1024).toFixed(1)}MB). Max 4MB. Compress before uploading.`,
+        },
+        { status: 413 }
+      );
+    }
+
     const db = await getDb();
     const image = {
       character_id: new ObjectId(character_id),

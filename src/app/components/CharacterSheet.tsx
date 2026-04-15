@@ -23,6 +23,15 @@ const TRAIT_FIELDS = [
   { key: "expression_default", label: "Default Expression", placeholder: "e.g. neutral-seductive" },
 ];
 
+const WARDROBE_PRESETS = [
+  { id: "casual", label: "Casual", desc: "jeans, t-shirt, sneakers" },
+  { id: "formal", label: "Formal", desc: "suit, dress, elegant attire" },
+  { id: "sporty", label: "Sporty", desc: "athletic wear, sportswear" },
+  { id: "fantasy", label: "Fantasy", desc: "robes, armor, magical attire" },
+  { id: "scifi", label: "Sci-Fi", desc: "futuristic suit, tech gear" },
+  { id: "medieval", label: "Medieval", desc: "tunic, leather, period clothing" },
+];
+
 export default function CharacterSheet({ character, onUpdate }: CharacterSheetProps) {
   const [name, setName] = useState(character.name);
   const [description, setDescription] = useState(character.description);
@@ -31,6 +40,8 @@ export default function CharacterSheet({ character, onUpdate }: CharacterSheetPr
   const [customTraits, setCustomTraits] = useState<Array<{ key: string; value: string }>>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
   useEffect(() => {
     setName(character.name);
@@ -45,6 +56,70 @@ export default function CharacterSheet({ character, onUpdate }: CharacterSheetPr
       .map(([key, value]) => ({ key, value }));
     setCustomTraits(custom);
   }, [character]);
+
+  const handleAnalyzeImage = async () => {
+    const url = baseImageUrl.trim();
+    if (!url) return;
+
+    setAnalyzing(true);
+    setAnalyzeError(null);
+
+    try {
+      // Fetch the image and convert to base64
+      const imageRes = await fetch(url);
+      if (!imageRes.ok) throw new Error("Could not fetch image");
+
+      const buffer = await imageRes.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+      );
+      const contentType = imageRes.headers.get("content-type") || "image/jpeg";
+
+      // Send to analyze API
+      const res = await fetch("/api/analyze/gemini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64, mimeType: contentType }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setAnalyzeError(data.error || "Analysis failed");
+        return;
+      }
+
+      // Populate fields from analysis
+      if (data.name_suggestion && !name.trim()) setName(data.name_suggestion);
+      if (data.description) setDescription(data.description);
+
+      const newTraits = { ...traits };
+      if (data.hair) newTraits.hair = data.hair;
+      if (data.skin) newTraits.skin = data.skin;
+      if (data.accessories) newTraits.accessories = data.accessories;
+      if (data.clothing_base) newTraits.clothing_base = data.clothing_base;
+      if (data.expression_default) newTraits.expression_default = data.expression_default;
+      setTraits(newTraits);
+
+      // Add extra analysis fields as custom traits
+      const extraFields = ["body_type", "age_range", "distinguishing_features", "art_style"];
+      const newCustom = [...customTraits];
+      for (const field of extraFields) {
+        if (data[field]) {
+          const existingIdx = newCustom.findIndex((ct) => ct.key === field);
+          if (existingIdx >= 0) {
+            newCustom[existingIdx].value = data[field];
+          } else {
+            newCustom.push({ key: field, value: data[field] });
+          }
+        }
+      }
+      setCustomTraits(newCustom);
+    } catch (err) {
+      setAnalyzeError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -85,6 +160,10 @@ export default function CharacterSheet({ character, onUpdate }: CharacterSheetPr
 
   const removeCustomTrait = (index: number) => {
     setCustomTraits((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const applyWardrobePreset = (preset: (typeof WARDROBE_PRESETS)[number]) => {
+    setTraits((prev) => ({ ...prev, clothing_base: preset.desc }));
   };
 
   return (
@@ -142,6 +221,26 @@ export default function CharacterSheet({ character, onUpdate }: CharacterSheetPr
                 </div>
               )}
             </div>
+            {baseImageUrl && (
+              <button
+                onClick={handleAnalyzeImage}
+                disabled={analyzing}
+                className="mt-2 px-3 py-1.5 rounded-lg bg-accent/10 text-accent border border-accent/20 text-xs font-medium hover:bg-accent/20 transition-colors disabled:opacity-50"
+              >
+                {analyzing ? (
+                  <span className="flex items-center gap-1.5">
+                    <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
+                      <path d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" fill="currentColor" className="opacity-75" />
+                    </svg>
+                    Analyzing with Gemini...
+                  </span>
+                ) : (
+                  "Auto-Analyze Image with AI"
+                )}
+              </button>
+            )}
+            {analyzeError && <p className="text-xs text-danger mt-1">{analyzeError}</p>}
           </div>
         </div>
 
@@ -168,6 +267,30 @@ export default function CharacterSheet({ character, onUpdate }: CharacterSheetPr
                   className="w-full bg-bg border border-border rounded-lg px-3 py-1.5 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
                 />
               </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Wardrobe Presets */}
+        <div>
+          <h4 className="text-sm text-accent font-medium mb-3">Wardrobe</h4>
+          <p className="text-xs text-muted mb-3">
+            Quick-set clothing style. Overrides Base Clothing above.
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            {WARDROBE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => applyWardrobePreset(preset)}
+                className={`px-3 py-2 rounded-lg text-xs text-left border transition-colors ${
+                  traits.clothing_base === preset.desc
+                    ? "bg-accent/15 text-accent border-accent/30"
+                    : "text-muted border-border hover:border-border-strong hover:text-text"
+                }`}
+              >
+                <span className="font-medium block">{preset.label}</span>
+                <span className="text-muted/60 text-[10px]">{preset.desc}</span>
+              </button>
             ))}
           </div>
         </div>

@@ -27,6 +27,7 @@ interface CharacterImage {
   prompt_used: string;
   model_used: string;
   selected: boolean;
+  favorite: boolean;
   created_at: string;
 }
 
@@ -132,6 +133,37 @@ export default function Home() {
     }
   };
 
+  // Toggle image favorite (only one favorite per pose type)
+  const handleToggleFavorite = async (imageId: string, favorite: boolean) => {
+    try {
+      const res = await fetch(`/api/images/${imageId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ favorite }),
+      });
+      if (res.ok) {
+        setImages((prev) => {
+          const target = prev.find((img) => img._id === imageId);
+          return prev.map((img) => {
+            if (img._id === imageId) return { ...img, favorite };
+            // Unset favorite for other images in same pose type
+            if (
+              favorite &&
+              target &&
+              img.category === target.category &&
+              img.subcategory === target.subcategory
+            ) {
+              return { ...img, favorite: false };
+            }
+            return img;
+          });
+        });
+      }
+    } catch (err) {
+      console.error("Failed to update image:", err);
+    }
+  };
+
   // Delete image
   const handleDeleteImage = async (imageId: string) => {
     try {
@@ -202,14 +234,17 @@ export default function Home() {
               {activeTab === "dataset" && (
                 <DatasetGrid
                   images={images}
+                  characterName={selectedCharacter.name}
                   onImageClick={setViewingImage}
                   onToggleSelect={handleToggleSelect}
+                  onToggleFavorite={handleToggleFavorite}
                   onDeleteImage={handleDeleteImage}
                 />
               )}
               {activeTab === "generate" && (
                 <GeneratePanel
                   character={selectedCharacter}
+                  images={images}
                   onImageGenerated={fetchImages}
                 />
               )}
@@ -236,8 +271,10 @@ export default function Home() {
       />
       <ImageModal
         image={viewingImage}
+        characterName={selectedCharacter?.name || "character"}
         baseImageUrl={selectedCharacter?.base_image_url}
         onClose={() => setViewingImage(null)}
+        onImageSaved={fetchImages}
       />
     </div>
   );

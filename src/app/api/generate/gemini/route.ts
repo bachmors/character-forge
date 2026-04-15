@@ -23,23 +23,36 @@ export async function POST(req: NextRequest) {
     // Build the request parts
     const parts: Array<{ text: string } | { inline_data: { mime_type: string; data: string } }> = [];
 
-    // If we have a reference image, fetch it and include as inline_data
+    // If we have a reference image, include as inline_data
     if (referenceImageUrl) {
       try {
-        const imageResponse = await fetch(referenceImageUrl);
-        if (imageResponse.ok) {
-          const imageBuffer = await imageResponse.arrayBuffer();
-          const base64 = Buffer.from(imageBuffer).toString("base64");
-          const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
-          parts.push({
-            inline_data: {
-              mime_type: contentType,
-              data: base64,
-            },
-          });
+        if (referenceImageUrl.startsWith("data:")) {
+          // Handle data URLs directly (e.g. from stored base64 images)
+          const matches = referenceImageUrl.match(/^data:(.+?);base64,(.+)$/);
+          if (matches) {
+            parts.push({
+              inline_data: {
+                mime_type: matches[1],
+                data: matches[2],
+              },
+            });
+          }
+        } else {
+          const imageResponse = await fetch(referenceImageUrl);
+          if (imageResponse.ok) {
+            const imageBuffer = await imageResponse.arrayBuffer();
+            const base64 = Buffer.from(imageBuffer).toString("base64");
+            const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
+            parts.push({
+              inline_data: {
+                mime_type: contentType,
+                data: base64,
+              },
+            });
+          }
         }
       } catch (e) {
-        console.warn("Could not fetch reference image:", e);
+        console.warn("Could not process reference image:", e);
       }
     }
 

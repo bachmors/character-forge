@@ -9,6 +9,7 @@ import CharacterSheet from "./components/CharacterSheet";
 import CreateCharacterModal from "./components/CreateCharacterModal";
 import ImageModal from "./components/ImageModal";
 import SettingsModal from "./components/SettingsModal";
+import Lightbox from "./components/Lightbox";
 
 interface Character {
   _id: string;
@@ -39,6 +40,8 @@ export default function Home() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [viewingImage, setViewingImage] = useState<CharacterImage | null>(null);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [createFromImage, setCreateFromImage] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const selectedCharacter = characters.find((c) => c._id === selectedCharacterId) || null;
@@ -186,7 +189,8 @@ export default function Home() {
           setSelectedCharacterId(id);
           setActiveTab("dataset");
         }}
-        onCreateNew={() => setShowCreateModal(true)}
+        onCreateNew={() => { setCreateFromImage(false); setShowCreateModal(true); }}
+        onCreateFromImage={() => { setCreateFromImage(true); setShowCreateModal(true); }}
       />
 
       {/* Main content */}
@@ -235,7 +239,9 @@ export default function Home() {
                 <DatasetGrid
                   images={images}
                   characterName={selectedCharacter.name}
+                  baseImageUrl={selectedCharacter.base_image_url}
                   onImageClick={setViewingImage}
+                  onLightboxOpen={setLightboxSrc}
                   onToggleSelect={handleToggleSelect}
                   onToggleFavorite={handleToggleFavorite}
                   onDeleteImage={handleDeleteImage}
@@ -246,12 +252,14 @@ export default function Home() {
                   character={selectedCharacter}
                   images={images}
                   onImageGenerated={fetchImages}
+                  onLightboxOpen={setLightboxSrc}
                 />
               )}
               {activeTab === "sheet" && (
                 <CharacterSheet
                   character={selectedCharacter}
                   onUpdate={handleUpdateCharacter}
+                  onLightboxOpen={setLightboxSrc}
                 />
               )}
             </>
@@ -262,7 +270,8 @@ export default function Home() {
       {/* Modals */}
       <CreateCharacterModal
         open={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
+        fromImage={createFromImage}
+        onClose={() => { setShowCreateModal(false); setCreateFromImage(false); }}
         onCreate={handleCreateCharacter}
       />
       <SettingsModal
@@ -276,6 +285,7 @@ export default function Home() {
         onClose={() => setViewingImage(null)}
         onImageSaved={fetchImages}
       />
+      <Lightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );
 }

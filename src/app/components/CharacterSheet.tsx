@@ -13,6 +13,7 @@ interface Character {
 interface CharacterSheetProps {
   character: Character;
   onUpdate: (updated: Character) => void;
+  onLightboxOpen: (src: string) => void;
 }
 
 const TRAIT_FIELDS = [
@@ -32,7 +33,7 @@ const WARDROBE_PRESETS = [
   { id: "medieval", label: "Medieval", desc: "tunic, leather, period clothing" },
 ];
 
-export default function CharacterSheet({ character, onUpdate }: CharacterSheetProps) {
+export default function CharacterSheet({ character, onUpdate, onLightboxOpen }: CharacterSheetProps) {
   const [name, setName] = useState(character.name);
   const [description, setDescription] = useState(character.description);
   const [baseImageUrl, setBaseImageUrl] = useState(character.base_image_url);
@@ -216,7 +217,10 @@ export default function CharacterSheet({ character, onUpdate }: CharacterSheetPr
                 className="flex-1 bg-bg border border-border rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/30 transition-colors"
               />
               {baseImageUrl && (
-                <div className="w-12 h-12 rounded-lg border border-border overflow-hidden shrink-0">
+                <div
+                  className="w-12 h-12 rounded-lg border border-border overflow-hidden shrink-0 cursor-pointer hover:border-accent/40 transition-colors"
+                  onClick={() => onLightboxOpen(baseImageUrl)}
+                >
                   <img src={baseImageUrl} alt="Base" className="w-full h-full object-cover" />
                 </div>
               )}

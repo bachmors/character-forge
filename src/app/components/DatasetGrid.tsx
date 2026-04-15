@@ -20,7 +20,9 @@ interface CharacterImage {
 interface DatasetGridProps {
   images: CharacterImage[];
   characterName: string;
+  baseImageUrl?: string;
   onImageClick: (image: CharacterImage) => void;
+  onLightboxOpen: (src: string) => void;
   onToggleSelect: (imageId: string, selected: boolean) => void;
   onToggleFavorite: (imageId: string, favorite: boolean) => void;
   onDeleteImage: (imageId: string) => void;
@@ -29,7 +31,9 @@ interface DatasetGridProps {
 export default function DatasetGrid({
   images,
   characterName,
+  baseImageUrl,
   onImageClick,
+  onLightboxOpen,
   onToggleSelect,
   onToggleFavorite,
   onDeleteImage,
@@ -155,6 +159,22 @@ export default function DatasetGrid({
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+          {/* Reference image as first item */}
+          {baseImageUrl && activeCategory === "all" && (
+            <div
+              className="group relative rounded-lg border border-accent/30 overflow-hidden cursor-pointer hover:border-accent/60 transition-all ring-1 ring-accent/10"
+              onClick={() => onLightboxOpen(baseImageUrl)}
+            >
+              <div className="aspect-square bg-bg">
+                <img src={baseImageUrl} alt="Reference" className="w-full h-full object-cover" />
+              </div>
+              <div className="absolute top-1 left-1">
+                <span className="px-2 py-0.5 rounded-full bg-accent text-bg text-[10px] font-semibold">
+                  Reference
+                </span>
+              </div>
+            </div>
+          )}
           {filteredImages.map((image) => (
             <div
               key={image._id}

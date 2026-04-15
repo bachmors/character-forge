@@ -32,9 +32,10 @@ interface GeneratePanelProps {
   character: Character;
   images: CharacterImage[];
   onImageGenerated: () => void;
+  onLightboxOpen: (src: string) => void;
 }
 
-export default function GeneratePanel({ character, images, onImageGenerated }: GeneratePanelProps) {
+export default function GeneratePanel({ character, images, onImageGenerated, onLightboxOpen }: GeneratePanelProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>("head_rotation");
   const [selectedPose, setSelectedPose] = useState<PoseDefinition | null>(null);
   const [isCustom, setIsCustom] = useState(false);
@@ -270,7 +271,10 @@ export default function GeneratePanel({ character, images, onImageGenerated }: G
           {character.base_image_url && (
             <div>
               <label className="block text-sm text-muted mb-2">Reference Image</label>
-              <div className="w-32 h-32 rounded-lg border border-border overflow-hidden">
+              <div
+                className="w-32 h-32 rounded-lg border border-border overflow-hidden cursor-pointer hover:border-accent/40 transition-colors"
+                onClick={() => onLightboxOpen(character.base_image_url)}
+              >
                 <img
                   src={character.base_image_url}
                   alt="Reference"
@@ -466,7 +470,8 @@ export default function GeneratePanel({ character, images, onImageGenerated }: G
               <img
                 src={generatedImage}
                 alt="Generated"
-                className="w-full h-full object-contain"
+                className="w-full h-full object-contain cursor-pointer"
+                onClick={() => onLightboxOpen(generatedImage)}
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-muted/30">

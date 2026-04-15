@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { compressImage } from "@/lib/imageUtils";
 
 interface CreateCharacterModalProps {
   open: boolean;
+  fromImage?: boolean;
   onClose: () => void;
   onCreate: (data: {
     name: string;
@@ -15,9 +17,11 @@ interface CreateCharacterModalProps {
 
 export default function CreateCharacterModal({
   open,
+  fromImage,
   onClose,
   onCreate,
 }: CreateCharacterModalProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [baseImageUrl, setBaseImageUrl] = useState("");
@@ -33,27 +37,15 @@ export default function CreateCharacterModal({
 
   if (!open) return null;
 
-  const handleAnalyzeImage = async () => {
-    const url = baseImageUrl.trim();
-    if (!url) return;
-
+  const analyzeBase64 = async (base64: string, mimeType: string) => {
     setAnalyzing(true);
     setAnalyzeError(null);
 
     try {
-      const imageRes = await fetch(url);
-      if (!imageRes.ok) throw new Error("Could not fetch image");
-
-      const buffer = await imageRes.arrayBuffer();
-      const base64 = btoa(
-        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-      );
-      const contentType = imageRes.headers.get("content-type") || "image/jpeg";
-
       const res = await fetch("/api/analyze/gemini", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: base64, mimeType: contentType }),
+        body: JSON.stringify({ imageBase64: base64, mimeType }),
       });
 
       const data = await res.json();
@@ -78,6 +70,51 @@ export default function CreateCharacterModal({
     } finally {
       setAnalyzing(false);
     }
+  };
+
+  const handleAnalyzeImage = async () => {
+    const url = baseImageUrl.trim();
+    if (!url) return;
+
+    if (url.startsWith("data:")) {
+      const matches = url.match(/^data:(.+?);base64,(.+)$/);
+      if (matches) {
+        await analyzeBase64(matches[2], matches[1]);
+      }
+      return;
+    }
+
+    setAnalyzing(true);
+    setAnalyzeError(null);
+    try {
+      const imageRes = await fetch(url);
+      if (!imageRes.ok) throw new Error("Could not fetch image");
+
+      const buffer = await imageRes.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+      );
+      const contentType = imageRes.headers.get("content-type") || "image/jpeg";
+      await analyzeBase64(base64, contentType);
+    } catch (err) {
+      setAnalyzeError(err instanceof Error ? err.message : "Analysis failed");
+      setAnalyzing(false);
+    }
+  };
+
+  const handleFileUpload = async (file: File) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      const compressed = await compressImage(dataUrl);
+      setBaseImageUrl(compressed);
+      // Auto-analyze the uploaded image
+      const matches = compressed.match(/^data:(.+?);base64,(.+)$/);
+      if (matches) {
+        await analyzeBase64(matches[2], matches[1]);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -145,14 +182,60 @@ export default function CreateCharacterModal({
               />
             </div>
 
-            {/* Base Image URL */}
+            {/* Base Image Upload / URL */}
             <div>
-              <label className="block text-sm text-muted mb-1">Base Image URL</label>
+              <label className="block text-sm text-muted mb-1">Base Image</label>
+              {/* File Upload Area */}
+              <div
+                className={`mb-2 border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-accent/40 ${
+                  baseImageUrl ? "border-success/30 bg-success/5" : "border-border"
+                }`}
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const file = e.dataTransfer.files[0];
+                  if (file && file.type.startsWith("image/")) handleFileUpload(file);
+                }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFileUpload(file);
+                  }}
+                />
+                {baseImageUrl ? (
+                  <div className="flex items-center justify-center gap-3">
+                    <div className="w-16 h-16 rounded-lg overflow-hidden border border-border shrink-0">
+                      <img src={baseImageUrl} alt="Uploaded" className="w-full h-full object-cover" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-xs text-success font-medium">Image loaded</p>
+                      <p className="text-xs text-muted">Click or drop to replace</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto text-muted mb-1">
+                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <polyline points="21 15 16 10 5 21" />
+                    </svg>
+                    <p className="text-xs text-muted">Drop image here or click to upload</p>
+                  </div>
+                )}
+              </div>
+              {/* OR URL input */}
               <input
-                type="url"
-                value={baseImageUrl}
+                type="text"
+                value={baseImageUrl.startsWith("data:") ? "" : baseImageUrl}
                 onChange={(e) => setBaseImageUrl(e.target.value)}
-                placeholder="https://... (anchor identity image)"
+                placeholder="...or paste image URL"
                 className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
               />
               {baseImageUrl && (

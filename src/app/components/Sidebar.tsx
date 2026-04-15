@@ -14,9 +14,10 @@ interface SidebarProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onCreateNew: () => void;
+  onCreateFromImage: () => void;
 }
 
-export default function Sidebar({ characters, selectedId, onSelect, onCreateNew }: SidebarProps) {
+export default function Sidebar({ characters, selectedId, onSelect, onCreateNew, onCreateFromImage }: SidebarProps) {
   const [search, setSearch] = useState("");
 
   const filtered = characters.filter(
@@ -94,13 +95,19 @@ export default function Sidebar({ characters, selectedId, onSelect, onCreateNew 
         ))}
       </div>
 
-      {/* Create Button */}
-      <div className="p-3 border-t border-border">
+      {/* Create Buttons */}
+      <div className="p-3 border-t border-border space-y-2">
         <button
           onClick={onCreateNew}
           className="w-full bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 rounded-lg py-2 text-sm font-medium transition-colors"
         >
           + New Character
+        </button>
+        <button
+          onClick={onCreateFromImage}
+          className="w-full hover:bg-bg/50 text-muted hover:text-text border border-border rounded-lg py-2 text-xs transition-colors"
+        >
+          Create from Image
         </button>
       </div>
     </aside>

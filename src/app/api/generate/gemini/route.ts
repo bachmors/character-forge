@@ -23,10 +23,12 @@ export async function POST(req: NextRequest) {
     const ai = new GoogleGenAI({ apiKey });
 
     // Build content — if reference image, use parts array; otherwise simple string
-    let contents: string | Array<{ role: string; parts: Array<Record<string, unknown>> }>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let contents: any;
 
     if (referenceImageUrl) {
-      const parts: Array<Record<string, unknown>> = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const parts: any[] = [];
       try {
         const imageResponse = await fetch(referenceImageUrl);
         if (imageResponse.ok) {
@@ -43,7 +45,6 @@ export async function POST(req: NextRequest) {
       });
       contents = [{ role: "user", parts }];
     } else {
-      // Simple string prompt — matches official Google examples exactly
       contents = `Generate an image based on this description:\n\n${prompt}`;
     }
 
@@ -75,9 +76,9 @@ export async function POST(req: NextRequest) {
     let textResponse = "";
 
     for (const part of responseParts) {
-      if (part.inlineData) {
-        imageData = part.inlineData.data;
-        mimeType = part.inlineData.mimeType || "image/png";
+      if (part.inlineData && part.inlineData.data) {
+        imageData = part.inlineData.data as string;
+        mimeType = (part.inlineData.mimeType as string) || "image/png";
       }
       if (part.text) {
         textResponse += part.text;

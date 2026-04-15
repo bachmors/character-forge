@@ -27,10 +27,12 @@ function buildTraitsString(traits: CharacterTraits): string {
 export function buildPrompt(
   pose: PoseDefinition,
   traits: CharacterTraits,
-  characterName: string
+  characterName: string,
+  clothingOverride?: string
 ): string {
   const traitsStr = buildTraitsString(traits);
   const expression = traits.expression_default || "neutral";
+  const clothing = clothingOverride || traits.clothing_base || "clothing";
 
   return pose.promptTemplate
     .replace(/\[CHARACTER_TRAITS\]/g, traitsStr)
@@ -38,7 +40,7 @@ export function buildPrompt(
     .replace(/\[EXPRESSION\]/g, expression)
     .replace(/\[ACCESSORIES\]/g, traits.accessories || "accessories")
     .replace(/\[HAIR\]/g, traits.hair || "hair")
-    .replace(/\[CLOTHING\]/g, traits.clothing_base || "clothing");
+    .replace(/\[CLOTHING\]/g, clothing);
 }
 
 export const STANDARD_POSES: PoseDefinition[] = [
@@ -193,3 +195,25 @@ export const CATEGORIES = [
 ] as const;
 
 export type CategoryId = (typeof CATEGORIES)[number]["id"];
+
+export const CLOTHING_STYLES = [
+  { id: "default", label: "Default (Character Base)" },
+  { id: "casual", label: "Casual" },
+  { id: "formal", label: "Formal" },
+  { id: "sporty", label: "Sporty" },
+  { id: "fantasy", label: "Fantasy" },
+  { id: "scifi", label: "Sci-Fi" },
+  { id: "medieval", label: "Medieval" },
+  { id: "custom", label: "Custom" },
+] as const;
+
+export const CLOTHING_DESCRIPTIONS: Record<string, string> = {
+  default: "",
+  casual: "casual everyday clothing like jeans and a comfortable top",
+  formal: "elegant formal attire, suit or evening dress",
+  sporty: "athletic sportswear, activewear",
+  fantasy: "fantasy-style clothing with ornate magical details, robes or armor",
+  scifi: "futuristic sci-fi clothing with tech elements, sleek bodysuit or uniform",
+  medieval: "medieval-era clothing, tunic, leather armor, or period dress",
+  custom: "",
+};

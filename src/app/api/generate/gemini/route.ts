@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
-import { GoogleGenAI } from "@google/genai";
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,6 +9,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
 
+    // Get API key from session or env
     const session = await getSession();
     const apiKey = session.apiKeys?.googleAi || process.env.GOOGLE_AI_API_KEY;
 
@@ -20,96 +20,165 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    // Build the request parts
+    const parts: Array<{ text: string } | { inline_data: { mime_type: string; data: string } }> = [];
 
-    // Build content — if reference image, use parts array; otherwise simple string
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let contents: any;
-
+    // If we have a reference image, include as inline_data
     if (referenceImageUrl) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const parts: any[] = [];
       try {
-        const imageResponse = await fetch(referenceImageUrl);
-        if (imageResponse.ok) {
-          const imageBuffer = await imageResponse.arrayBuffer();
-          const base64 = Buffer.from(imageBuffer).toString("base64");
-          const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
-          parts.push({ inlineData: { mimeType: contentType, data: base64 } });
+        if (referenceImageUrl.startsWith("data:")) {
+          // Handle data URLs directly (e.g. from stored base64 images)
+          const matches = referenceImageUrl.match(/^data:(.+?);base64,(.+)$/);
+          if (matches) {
+            parts.push({
+              inline_data: {
+                mime_type: matches[1],
+                data: matches[2],
+              },
+            });
+          }
+        } else {
+          const imageResponse = await fetch(referenceImageUrl);
+          if (imageResponse.ok) {
+            const imageBuffer = await imageResponse.arrayBuffer();
+            const base64 = Buffer.from(imageBuffer).toString("base64");
+            const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
+            parts.push({
+              inline_data: {
+                mime_type: contentType,
+                data: base64,
+              },
+            });
+          }
         }
       } catch (e) {
-        console.warn("Could not fetch reference image:", e);
+        console.warn("Could not process reference image:", e);
       }
-      parts.push({
-        text: `Generate an image based on this description. Use the provided reference image as a guide for character consistency.\n\n${prompt}`,
-      });
-      contents = [{ role: "user", parts }];
-    } else {
-      contents = `Generate an image based on this description:\n\n${prompt}`;
     }
 
-    // Generate with Nano Banana 2 — matching official SDK format
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-image-preview",
-      contents,
-      config: {
-        responseModalities: ["TEXT", "IMAGE"],
-        imageConfig: {
-          aspectRatio: "1:1",
-          imageSize: "1K",
-        },
-      },
+    parts.push({
+      text: `Generate an image based on this description. If a reference image is provided, use it as a guide for character consistency.\n\n${prompt}`,
     });
 
-    // Extract image from SDK response
-    const candidates = response.candidates || [];
-    if (candidates.length === 0) {
-      return NextResponse.json(
-        { error: "No response from Gemini", debug: JSON.stringify(response) },
-        { status: 500 }
-      );
-    }
+    // Try primary model first, fall back to alternative if it fails
+    const models = ["gemini-3.1-flash-image-preview", "gemini-2.0-flash-exp"];
 
-    const responseParts = candidates[0].content?.parts || [];
-    let imageData: string | null = null;
-    let mimeType = "image/png";
-    let textResponse = "";
+    for (const model of models) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    for (const part of responseParts) {
-      if (part.inlineData && part.inlineData.data) {
-        imageData = part.inlineData.data as string;
-        mimeType = (part.inlineData.mimeType as string) || "image/png";
-      }
-      if (part.text) {
-        textResponse += part.text;
-      }
-    }
+      console.log(`[Gemini] Trying model: ${model}`);
 
-    if (!imageData) {
-      return NextResponse.json(
-        {
-          error: "Gemini did not generate an image",
-          debug: {
-            textResponse: textResponse || "empty",
-            partsCount: responseParts.length,
-            finishReason: candidates[0].finishReason,
+      const geminiResponse = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: {
+            responseModalities: ["IMAGE", "TEXT"],
           },
-        },
-        { status: 500 }
-      );
+        }),
+      });
+
+      if (!geminiResponse.ok) {
+        const errorData = await geminiResponse.text();
+        console.error(`[Gemini] API error (${model}):`, errorData);
+        // If this isn't the last model, try the next one
+        if (model !== models[models.length - 1]) {
+          console.log(`[Gemini] Falling back to next model...`);
+          continue;
+        }
+        return NextResponse.json(
+          { error: `Gemini API error: ${geminiResponse.status}`, details: errorData },
+          { status: geminiResponse.status }
+        );
+      }
+
+      const data = await geminiResponse.json();
+
+      // Debug logging — full response structure
+      console.log(`[Gemini] Full response (${model}):`, JSON.stringify(data, null, 2));
+      if (data.promptFeedback) {
+        console.log(`[Gemini] promptFeedback:`, JSON.stringify(data.promptFeedback));
+      }
+      const candidates = data.candidates || [];
+      if (candidates.length > 0) {
+        console.log(`[Gemini] finishReason:`, candidates[0].finishReason);
+        const partTypes = (candidates[0].content?.parts || []).map(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (p: any) => Object.keys(p).join(",")
+        );
+        console.log(`[Gemini] part types:`, partTypes);
+      }
+
+      if (candidates.length === 0) {
+        // If this isn't the last model, try the next one
+        if (model !== models[models.length - 1]) {
+          console.log(`[Gemini] No candidates, falling back to next model...`);
+          continue;
+        }
+        return NextResponse.json(
+          {
+            error: "No response from Gemini",
+            debug: {
+              promptFeedback: data.promptFeedback || null,
+              candidateCount: 0,
+              model,
+            },
+          },
+          { status: 500 }
+        );
+      }
+
+      const responseParts = candidates[0].content?.parts || [];
+      let imageData: string | null = null;
+      let mimeType = "image/png";
+      let textResponse = "";
+
+      for (const part of responseParts) {
+        if (part.inline_data) {
+          imageData = part.inline_data.data;
+          mimeType = part.inline_data.mime_type || "image/png";
+        }
+        if (part.text) {
+          textResponse += part.text;
+        }
+      }
+
+      if (!imageData) {
+        // If this isn't the last model, try the next one
+        if (model !== models[models.length - 1]) {
+          console.log(`[Gemini] No image in response from ${model}, falling back...`);
+          continue;
+        }
+        return NextResponse.json(
+          {
+            error: "Gemini did not generate an image. Response: " + (textResponse || "empty"),
+            debug: {
+              promptFeedback: data.promptFeedback || null,
+              finishReason: candidates[0].finishReason,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              partTypes: responseParts.map((p: any) => Object.keys(p).join(",")),
+              textResponse,
+              model,
+            },
+          },
+          { status: 500 }
+        );
+      }
+
+      // Return image as base64 data URL
+      const dataUrl = `data:${mimeType};base64,${imageData}`;
+      return NextResponse.json({
+        image_url: dataUrl,
+        text_response: textResponse,
+        model_used: model,
+      });
     }
 
-    const dataUrl = `data:${mimeType};base64,${imageData}`;
-    return NextResponse.json({
-      image_url: dataUrl,
-      text_response: textResponse,
-      model_used: "gemini-3.1-flash-image-preview",
-    });
+    // Should not reach here, but just in case
+    return NextResponse.json({ error: "All models failed" }, { status: 500 });
   } catch (error) {
     console.error("POST /api/generate/gemini error:", error);
-    return NextResponse.json(
-      { error: "Failed to generate image", details: String(error) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to generate image" }, { status: 500 });
   }
 }

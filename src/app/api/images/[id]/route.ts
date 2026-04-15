@@ -12,8 +12,27 @@ export async function PUT(
 
     const updateData: Record<string, unknown> = {};
     if (body.selected !== undefined) updateData.selected = body.selected;
+    if (body.favorite !== undefined) updateData.favorite = body.favorite;
     if (body.category !== undefined) updateData.category = body.category;
     if (body.subcategory !== undefined) updateData.subcategory = body.subcategory;
+
+    // When marking as favorite, unmark others in the same pose category
+    if (body.favorite === true) {
+      const image = await db
+        .collection("character_images")
+        .findOne({ _id: new ObjectId(params.id) });
+      if (image) {
+        await db.collection("character_images").updateMany(
+          {
+            character_id: image.character_id,
+            category: image.category,
+            subcategory: image.subcategory,
+            _id: { $ne: new ObjectId(params.id) },
+          },
+          { $set: { favorite: false } }
+        );
+      }
+    }
 
     const result = await db
       .collection("character_images")

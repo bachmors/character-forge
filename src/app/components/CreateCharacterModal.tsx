@@ -28,8 +28,57 @@ export default function CreateCharacterModal({
     expression_default: "neutral",
     clothing_base: "",
   });
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
   if (!open) return null;
+
+  const handleAnalyzeImage = async () => {
+    const url = baseImageUrl.trim();
+    if (!url) return;
+
+    setAnalyzing(true);
+    setAnalyzeError(null);
+
+    try {
+      const imageRes = await fetch(url);
+      if (!imageRes.ok) throw new Error("Could not fetch image");
+
+      const buffer = await imageRes.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+      );
+      const contentType = imageRes.headers.get("content-type") || "image/jpeg";
+
+      const res = await fetch("/api/analyze/gemini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64, mimeType: contentType }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setAnalyzeError(data.error || "Analysis failed");
+        return;
+      }
+
+      if (data.name_suggestion && !name.trim()) setName(data.name_suggestion);
+      if (data.description) setDescription(data.description);
+
+      setTraits((prev) => ({
+        ...prev,
+        hair: data.hair || prev.hair,
+        skin: data.skin || prev.skin,
+        accessories: data.accessories || prev.accessories,
+        clothing_base: data.clothing_base || prev.clothing_base,
+        expression_default: data.expression_default || prev.expression_default,
+      }));
+    } catch (err) {
+      setAnalyzeError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +94,7 @@ export default function CreateCharacterModal({
     setDescription("");
     setBaseImageUrl("");
     setTraits({ hair: "", accessories: "", skin: "", expression_default: "neutral", clothing_base: "" });
+    setAnalyzeError(null);
   };
 
   const traitFields = [
@@ -105,6 +155,27 @@ export default function CreateCharacterModal({
                 placeholder="https://... (anchor identity image)"
                 className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
               />
+              {baseImageUrl && (
+                <button
+                  type="button"
+                  onClick={handleAnalyzeImage}
+                  disabled={analyzing}
+                  className="mt-2 px-3 py-1.5 rounded-lg bg-accent/10 text-accent border border-accent/20 text-xs font-medium hover:bg-accent/20 transition-colors disabled:opacity-50"
+                >
+                  {analyzing ? (
+                    <span className="flex items-center gap-1.5">
+                      <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
+                        <path d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" fill="currentColor" className="opacity-75" />
+                      </svg>
+                      Analyzing...
+                    </span>
+                  ) : (
+                    "Auto-Analyze Image with AI"
+                  )}
+                </button>
+              )}
+              {analyzeError && <p className="text-xs text-danger mt-1">{analyzeError}</p>}
             </div>
 
             {/* Traits */}

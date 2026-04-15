@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { STANDARD_POSES, CATEGORIES, buildPrompt, type CharacterTraits, type PoseDefinition } from "@/lib/prompts";
+import { useState, useCallback } from "react";
+import {
+  STANDARD_POSES, CATEGORIES, CLOTHING_STYLES, CLOTHING_DESCRIPTIONS,
+  buildPrompt, type CharacterTraits, type PoseDefinition,
+} from "@/lib/prompts";
+import { compressImage } from "@/lib/imageUtils";
 
 interface Character {
   _id: string;
@@ -11,12 +15,26 @@ interface Character {
   traits: Record<string, string>;
 }
 
+interface CharacterImage {
+  _id: string;
+  character_id: string;
+  category: string;
+  subcategory: string;
+  image_url: string;
+  prompt_used: string;
+  model_used: string;
+  selected: boolean;
+  favorite: boolean;
+  created_at: string;
+}
+
 interface GeneratePanelProps {
   character: Character;
+  images: CharacterImage[];
   onImageGenerated: () => void;
 }
 
-export default function GeneratePanel({ character, onImageGenerated }: GeneratePanelProps) {
+export default function GeneratePanel({ character, images, onImageGenerated }: GeneratePanelProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>("head_rotation");
   const [selectedPose, setSelectedPose] = useState<PoseDefinition | null>(null);
   const [isCustom, setIsCustom] = useState(false);
@@ -24,14 +42,38 @@ export default function GeneratePanel({ character, onImageGenerated }: GenerateP
   const [editedPrompt, setEditedPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [generatedModelUsed, setGeneratedModelUsed] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [clothingStyle, setClothingStyle] = useState("default");
+  const [customClothing, setCustomClothing] = useState("");
+
+  // Batch generation state
+  const [batchGenerating, setBatchGenerating] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentPose: "" });
+  const [batchErrors, setBatchErrors] = useState<string[]>([]);
 
   const categoryPoses = STANDARD_POSES.filter((p) => p.category === selectedCategory);
+
+  const getClothingDescription = useCallback(() => {
+    if (clothingStyle === "default") return undefined;
+    if (clothingStyle === "custom") return customClothing || undefined;
+    return CLOTHING_DESCRIPTIONS[clothingStyle] || undefined;
+  }, [clothingStyle, customClothing]);
 
   const handlePoseSelect = (pose: PoseDefinition) => {
     setSelectedPose(pose);
     setIsCustom(false);
-    const prompt = buildPrompt(pose, character.traits as CharacterTraits, character.name);
+    const clothing = clothingStyle === "default"
+      ? undefined
+      : clothingStyle === "custom"
+        ? customClothing || undefined
+        : CLOTHING_DESCRIPTIONS[clothingStyle];
+    const prompt = buildPrompt(
+      pose,
+      character.traits as CharacterTraits,
+      character.name,
+      clothing,
+    );
     setEditedPrompt(prompt);
     setGeneratedImage(null);
     setError(null);
@@ -45,6 +87,56 @@ export default function GeneratePanel({ character, onImageGenerated }: GenerateP
     setError(null);
   };
 
+  // Generate a single image via Gemini
+  const generateImage = useCallback(
+    async (prompt: string): Promise<{ image_url: string; model_used: string } | null> => {
+      const res = await fetch("/api/generate/gemini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          referenceImageUrl: character.base_image_url || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Generation failed");
+      }
+      return { image_url: data.image_url, model_used: data.model_used };
+    },
+    [character.base_image_url],
+  );
+
+  // Compress and save an image
+  const saveImage = useCallback(
+    async (
+      imageUrl: string,
+      category: string,
+      subcategory: string,
+      promptUsed: string,
+      modelUsed: string,
+    ) => {
+      const compressed = await compressImage(imageUrl);
+      const res = await fetch("/api/images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          character_id: character._id,
+          category,
+          subcategory,
+          image_url: compressed,
+          prompt_used: promptUsed,
+          model_used: modelUsed,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to save");
+      }
+    },
+    [character._id],
+  );
+
   const handleGenerate = async () => {
     const prompt = isCustom ? customPrompt : editedPrompt;
     if (!prompt.trim()) return;
@@ -54,25 +146,13 @@ export default function GeneratePanel({ character, onImageGenerated }: GenerateP
     setGeneratedImage(null);
 
     try {
-      const res = await fetch("/api/generate/gemini", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt,
-          referenceImageUrl: character.base_image_url || undefined,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || "Generation failed");
-        return;
+      const result = await generateImage(prompt);
+      if (result) {
+        setGeneratedImage(result.image_url);
+        setGeneratedModelUsed(result.model_used);
       }
-
-      setGeneratedImage(data.image_url);
     } catch (err) {
-      setError("Network error. Please try again.");
+      setError(err instanceof Error ? err.message : "Network error. Please try again.");
       console.error(err);
     } finally {
       setGenerating(false);
@@ -83,31 +163,105 @@ export default function GeneratePanel({ character, onImageGenerated }: GenerateP
     if (!generatedImage) return;
 
     try {
-      const res = await fetch("/api/images", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          character_id: character._id,
-          category: isCustom ? "custom" : selectedPose?.category,
-          subcategory: isCustom ? "custom" : selectedPose?.subcategory,
-          image_url: generatedImage,
-          prompt_used: isCustom ? customPrompt : editedPrompt,
-          model_used: "gemini-2.0-flash-exp",
-        }),
-      });
-
-      if (res.ok) {
-        onImageGenerated();
-        setGeneratedImage(null);
-      }
+      await saveImage(
+        generatedImage,
+        isCustom ? "custom" : selectedPose?.category || "custom",
+        isCustom ? "custom" : selectedPose?.subcategory || "custom",
+        isCustom ? customPrompt : editedPrompt,
+        generatedModelUsed || "gemini",
+      );
+      onImageGenerated();
+      setGeneratedImage(null);
     } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
       console.error("Failed to save:", err);
     }
   };
 
+  // Generate all standard poses sequentially
+  const handleGenerateAll = async () => {
+    setBatchGenerating(true);
+    setBatchErrors([]);
+    const poses = STANDARD_POSES;
+    setBatchProgress({ current: 0, total: poses.length, currentPose: "" });
+
+    for (let i = 0; i < poses.length; i++) {
+      const pose = poses[i];
+      setBatchProgress({ current: i, total: poses.length, currentPose: pose.label });
+
+      try {
+        const prompt = buildPrompt(
+          pose,
+          character.traits as CharacterTraits,
+          character.name,
+          getClothingDescription(),
+        );
+        const result = await generateImage(prompt);
+        if (result) {
+          await saveImage(
+            result.image_url,
+            pose.category,
+            pose.subcategory,
+            prompt,
+            result.model_used,
+          );
+          onImageGenerated();
+        }
+      } catch (err) {
+        const errMsg = `${pose.label}: ${err instanceof Error ? err.message : "failed"}`;
+        setBatchErrors((prev) => [...prev, errMsg]);
+      }
+
+      setBatchProgress({ current: i + 1, total: poses.length, currentPose: "" });
+    }
+
+    setBatchGenerating(false);
+  };
+
+  const getPoseImageCount = (pose: PoseDefinition) =>
+    images.filter((img) => img.category === pose.category && img.subcategory === pose.subcategory).length;
+
   return (
     <div className="p-6 animate-fade-in">
-      <h3 className="font-serif text-accent text-lg font-semibold mb-4">Generate Image</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-serif text-accent text-lg font-semibold">Generate Image</h3>
+        <button
+          onClick={handleGenerateAll}
+          disabled={batchGenerating || generating}
+          className="px-4 py-1.5 rounded-lg bg-accent/15 text-accent border border-accent/30 text-sm font-medium hover:bg-accent/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {batchGenerating ? "Generating..." : "Generate All Poses"}
+        </button>
+      </div>
+
+      {/* Batch generation progress */}
+      {batchGenerating && (
+        <div className="mb-6 p-4 bg-surface border border-border rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-text">
+              {batchProgress.currentPose
+                ? `Generating: ${batchProgress.currentPose}`
+                : `Completed ${batchProgress.current}/${batchProgress.total}`}
+            </span>
+            <span className="text-sm text-muted">
+              {batchProgress.current}/{batchProgress.total}
+            </span>
+          </div>
+          <div className="w-full h-2 bg-bg rounded-full overflow-hidden">
+            <div
+              className="h-full bg-accent rounded-full transition-all duration-300"
+              style={{
+                width: `${batchProgress.total > 0 ? (batchProgress.current / batchProgress.total) * 100 : 0}%`,
+              }}
+            />
+          </div>
+          {batchErrors.length > 0 && (
+            <div className="mt-2 text-xs text-danger">
+              {batchErrors.length} error(s): {batchErrors[batchErrors.length - 1]}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Prompt Builder */}
@@ -129,6 +283,63 @@ export default function GeneratePanel({ character, onImageGenerated }: GenerateP
             </div>
           )}
 
+          {/* Clothing Style Selector */}
+          <div>
+            <label className="block text-sm text-muted mb-2">Clothing Style</label>
+            <div className="flex flex-wrap gap-2">
+              {CLOTHING_STYLES.map((style) => (
+                <button
+                  key={style.id}
+                  onClick={() => {
+                    setClothingStyle(style.id);
+                    if (selectedPose) {
+                      const clothing =
+                        style.id === "default"
+                          ? undefined
+                          : style.id === "custom"
+                            ? customClothing || undefined
+                            : CLOTHING_DESCRIPTIONS[style.id];
+                      const prompt = buildPrompt(
+                        selectedPose,
+                        character.traits as CharacterTraits,
+                        character.name,
+                        clothing,
+                      );
+                      setEditedPrompt(prompt);
+                    }
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs transition-colors border ${
+                    clothingStyle === style.id
+                      ? "bg-accent/15 text-accent border-accent/30"
+                      : "text-muted border-border hover:border-border-strong hover:text-text"
+                  }`}
+                >
+                  {style.label}
+                </button>
+              ))}
+            </div>
+            {clothingStyle === "custom" && (
+              <input
+                type="text"
+                value={customClothing}
+                onChange={(e) => {
+                  setCustomClothing(e.target.value);
+                  if (selectedPose) {
+                    const prompt = buildPrompt(
+                      selectedPose,
+                      character.traits as CharacterTraits,
+                      character.name,
+                      e.target.value || undefined,
+                    );
+                    setEditedPrompt(prompt);
+                  }
+                }}
+                placeholder="Describe the clothing..."
+                className="mt-2 w-full bg-bg border border-border rounded-lg px-3 py-1.5 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
+              />
+            )}
+          </div>
+
           {/* Category selector */}
           <div>
             <label className="block text-sm text-muted mb-2">Image Type</label>
@@ -141,7 +352,7 @@ export default function GeneratePanel({ character, onImageGenerated }: GenerateP
                     setSelectedPose(null);
                     setIsCustom(cat.id === "custom");
                     if (cat.id === "custom") {
-                      setEditedPrompt(customPrompt);
+                      handleCustom();
                     }
                   }}
                   className={`px-3 py-1.5 rounded-lg text-sm transition-colors border ${
@@ -161,19 +372,27 @@ export default function GeneratePanel({ character, onImageGenerated }: GenerateP
             <div>
               <label className="block text-sm text-muted mb-2">Pose / Expression</label>
               <div className="grid grid-cols-2 gap-2">
-                {categoryPoses.map((pose) => (
-                  <button
-                    key={pose.id}
-                    onClick={() => handlePoseSelect(pose)}
-                    className={`px-3 py-2 rounded-lg text-sm text-left transition-colors border ${
-                      selectedPose?.id === pose.id
-                        ? "bg-accent/15 text-accent border-accent/30"
-                        : "text-muted border-border hover:border-border-strong hover:text-text"
-                    }`}
-                  >
-                    {pose.label}
-                  </button>
-                ))}
+                {categoryPoses.map((pose) => {
+                  const count = getPoseImageCount(pose);
+                  return (
+                    <button
+                      key={pose.id}
+                      onClick={() => handlePoseSelect(pose)}
+                      className={`px-3 py-2 rounded-lg text-sm text-left transition-colors border relative ${
+                        selectedPose?.id === pose.id
+                          ? "bg-accent/15 text-accent border-accent/30"
+                          : "text-muted border-border hover:border-border-strong hover:text-text"
+                      }`}
+                    >
+                      {pose.label}
+                      {count > 0 && (
+                        <span className="absolute top-1 right-1 w-5 h-5 rounded-full bg-success/20 text-success text-xs flex items-center justify-center">
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -211,7 +430,7 @@ export default function GeneratePanel({ character, onImageGenerated }: GenerateP
           <div className="flex gap-3">
             <button
               onClick={handleGenerate}
-              disabled={generating || (!isCustom && !editedPrompt) || (isCustom && !customPrompt)}
+              disabled={generating || batchGenerating || (!isCustom && !editedPrompt) || (isCustom && !customPrompt)}
               className="flex-1 py-2.5 rounded-lg bg-accent text-bg font-medium text-sm hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {generating ? (

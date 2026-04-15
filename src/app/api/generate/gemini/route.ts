@@ -47,8 +47,8 @@ export async function POST(req: NextRequest) {
       text: `Generate an image based on this description. If a reference image is provided, use it as a guide for character consistency.\n\n${prompt}`,
     });
 
-    // Call Gemini API
-    const model = "gemini-2.0-flash-exp";
+    // Call Gemini API — Nano Banana 2 (gemini-3.1-flash-image-preview)
+    const model = "gemini-3.1-flash-image-preview";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const geminiResponse = await fetch(url, {

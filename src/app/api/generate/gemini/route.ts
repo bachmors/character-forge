@@ -47,69 +47,123 @@ export async function POST(req: NextRequest) {
       text: `Generate an image based on this description. If a reference image is provided, use it as a guide for character consistency.\n\n${prompt}`,
     });
 
-    // Call Gemini API — Nano Banana 2 (gemini-3.1-flash-image-preview)
-    const model = "gemini-3.1-flash-image-preview";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    // Try primary model first, fall back to alternative if it fails
+    const models = ["gemini-3.1-flash-image-preview", "gemini-2.0-flash-exp"];
 
-    const geminiResponse = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: {
-          responseModalities: ["TEXT", "IMAGE"],
-        },
-      }),
-    });
+    for (const model of models) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    if (!geminiResponse.ok) {
-      const errorData = await geminiResponse.text();
-      console.error("Gemini API error:", errorData);
-      return NextResponse.json(
-        { error: `Gemini API error: ${geminiResponse.status}` },
-        { status: geminiResponse.status }
-      );
-    }
+      console.log(`[Gemini] Trying model: ${model}`);
 
-    const data = await geminiResponse.json();
+      const geminiResponse = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: {
+            responseModalities: ["IMAGE", "TEXT"],
+          },
+        }),
+      });
 
-    // Extract image from response
-    const candidates = data.candidates || [];
-    if (candidates.length === 0) {
-      return NextResponse.json({ error: "No response from Gemini" }, { status: 500 });
-    }
-
-    const responseParts = candidates[0].content?.parts || [];
-    let imageData: string | null = null;
-    let mimeType = "image/png";
-    let textResponse = "";
-
-    for (const part of responseParts) {
-      if (part.inline_data) {
-        imageData = part.inline_data.data;
-        mimeType = part.inline_data.mime_type || "image/png";
+      if (!geminiResponse.ok) {
+        const errorData = await geminiResponse.text();
+        console.error(`[Gemini] API error (${model}):`, errorData);
+        // If this isn't the last model, try the next one
+        if (model !== models[models.length - 1]) {
+          console.log(`[Gemini] Falling back to next model...`);
+          continue;
+        }
+        return NextResponse.json(
+          { error: `Gemini API error: ${geminiResponse.status}`, details: errorData },
+          { status: geminiResponse.status }
+        );
       }
-      if (part.text) {
-        textResponse += part.text;
+
+      const data = await geminiResponse.json();
+
+      // Debug logging — full response structure
+      console.log(`[Gemini] Full response (${model}):`, JSON.stringify(data, null, 2));
+      if (data.promptFeedback) {
+        console.log(`[Gemini] promptFeedback:`, JSON.stringify(data.promptFeedback));
       }
+      const candidates = data.candidates || [];
+      if (candidates.length > 0) {
+        console.log(`[Gemini] finishReason:`, candidates[0].finishReason);
+        const partTypes = (candidates[0].content?.parts || []).map(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (p: any) => Object.keys(p).join(",")
+        );
+        console.log(`[Gemini] part types:`, partTypes);
+      }
+
+      if (candidates.length === 0) {
+        // If this isn't the last model, try the next one
+        if (model !== models[models.length - 1]) {
+          console.log(`[Gemini] No candidates, falling back to next model...`);
+          continue;
+        }
+        return NextResponse.json(
+          {
+            error: "No response from Gemini",
+            debug: {
+              promptFeedback: data.promptFeedback || null,
+              candidateCount: 0,
+              model,
+            },
+          },
+          { status: 500 }
+        );
+      }
+
+      const responseParts = candidates[0].content?.parts || [];
+      let imageData: string | null = null;
+      let mimeType = "image/png";
+      let textResponse = "";
+
+      for (const part of responseParts) {
+        if (part.inline_data) {
+          imageData = part.inline_data.data;
+          mimeType = part.inline_data.mime_type || "image/png";
+        }
+        if (part.text) {
+          textResponse += part.text;
+        }
+      }
+
+      if (!imageData) {
+        // If this isn't the last model, try the next one
+        if (model !== models[models.length - 1]) {
+          console.log(`[Gemini] No image in response from ${model}, falling back...`);
+          continue;
+        }
+        return NextResponse.json(
+          {
+            error: "Gemini did not generate an image. Response: " + (textResponse || "empty"),
+            debug: {
+              promptFeedback: data.promptFeedback || null,
+              finishReason: candidates[0].finishReason,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              partTypes: responseParts.map((p: any) => Object.keys(p).join(",")),
+              textResponse,
+              model,
+            },
+          },
+          { status: 500 }
+        );
+      }
+
+      // Return image as base64 data URL
+      const dataUrl = `data:${mimeType};base64,${imageData}`;
+      return NextResponse.json({
+        image_url: dataUrl,
+        text_response: textResponse,
+        model_used: model,
+      });
     }
 
-    if (!imageData) {
-      return NextResponse.json(
-        {
-          error: "Gemini did not generate an image. Response: " + (textResponse || "empty"),
-        },
-        { status: 500 }
-      );
-    }
-
-    // Return image as base64 data URL
-    const dataUrl = `data:${mimeType};base64,${imageData}`;
-    return NextResponse.json({
-      image_url: dataUrl,
-      text_response: textResponse,
-      model_used: model,
-    });
+    // Should not reach here, but just in case
+    return NextResponse.json({ error: "All models failed" }, { status: 500 });
   } catch (error) {
     console.error("POST /api/generate/gemini error:", error);
     return NextResponse.json({ error: "Failed to generate image" }, { status: 500 });

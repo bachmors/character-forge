@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import BuyMeCoffee from "./BuyMeCoffee";
 
 interface Character {
   _id: string;
@@ -125,6 +126,7 @@ export default function Sidebar({ characters, selectedId, onSelect, onCreateNew,
 
         {/* Create Buttons */}
         <div className="p-3 border-t border-border space-y-2">
+          <BuyMeCoffee />
           <button
             onClick={() => {
               onCreateNew();

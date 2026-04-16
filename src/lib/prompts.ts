@@ -15,12 +15,12 @@ export interface PoseDefinition {
   promptTemplate: string;
 }
 
-function buildTraitsString(traits: CharacterTraits): string {
+function buildTraitsString(traits: CharacterTraits, omitClothingBase = false): string {
   const parts: string[] = [];
   if (traits.skin) parts.push(traits.skin);
   if (traits.hair) parts.push(traits.hair);
   if (traits.accessories) parts.push(`wearing ${traits.accessories}`);
-  if (traits.clothing_base) parts.push(`in ${traits.clothing_base}`);
+  if (!omitClothingBase && traits.clothing_base) parts.push(`in ${traits.clothing_base}`);
   return parts.join(", ") || "the character";
 }
 
@@ -30,7 +30,8 @@ export function buildPrompt(
   characterName: string,
   clothingOverride?: string
 ): string {
-  const traitsStr = buildTraitsString(traits);
+  const hasClothingOverride = Boolean(clothingOverride);
+  const traitsStr = buildTraitsString(traits, hasClothingOverride);
   const expression = traits.expression_default || "neutral";
   const clothing = clothingOverride || traits.clothing_base || "clothing";
 

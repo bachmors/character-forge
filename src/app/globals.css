@@ -36,7 +36,12 @@
 body {
   color: var(--text);
   background: var(--bg);
-  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  body {
+    overflow: hidden;
+  }
 }
 
 ::selection {

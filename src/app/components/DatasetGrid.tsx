@@ -66,7 +66,7 @@ export default function DatasetGrid({
   };
 
   return (
-    <div className="p-6 animate-fade-in">
+    <div className="p-4 md:p-6 animate-fade-in">
       {/* Progress Bar */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
@@ -84,10 +84,10 @@ export default function DatasetGrid({
       </div>
 
       {/* Category Tabs */}
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-4 overflow-x-auto flex-nowrap">
         <button
           onClick={() => setActiveCategory("all")}
-          className={`px-3 py-1 rounded text-sm transition-colors ${
+          className={`px-3 py-1 rounded text-sm transition-colors whitespace-nowrap ${
             activeCategory === "all"
               ? "bg-accent/15 text-accent font-medium"
               : "text-muted hover:text-text"
@@ -101,7 +101,7 @@ export default function DatasetGrid({
             <button
               key={cat.id}
               onClick={() => setActiveCategory(cat.id)}
-              className={`px-3 py-1 rounded text-sm transition-colors ${
+              className={`px-3 py-1 rounded text-sm transition-colors whitespace-nowrap ${
                 activeCategory === cat.id
                   ? "bg-accent/15 text-accent font-medium"
                   : "text-muted hover:text-text"

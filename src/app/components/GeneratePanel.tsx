@@ -223,7 +223,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
     images.filter((img) => img.category === pose.category && img.subcategory === pose.subcategory).length;
 
   return (
-    <div className="p-6 animate-fade-in">
+    <div className="p-4 md:p-6 animate-fade-in">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-serif text-accent text-lg font-semibold">Generate Image</h3>
         <button

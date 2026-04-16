@@ -64,7 +64,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-surface border border-border-strong rounded-xl w-full max-w-lg animate-fade-in">
+      <div className="bg-surface border border-border-strong rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto animate-fade-in mx-4">
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="font-serif text-accent text-xl font-semibold">Settings</h2>

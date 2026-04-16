@@ -43,6 +43,7 @@ export default function Home() {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [createFromImage, setCreateFromImage] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const selectedCharacter = characters.find((c) => c._id === selectedCharacterId) || null;
 
@@ -191,6 +192,8 @@ export default function Home() {
         }}
         onCreateNew={() => { setCreateFromImage(false); setShowCreateModal(true); }}
         onCreateFromImage={() => { setCreateFromImage(true); setShowCreateModal(true); }}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       {/* Main content */}
@@ -200,6 +203,7 @@ export default function Home() {
           activeTab={activeTab}
           onTabChange={setActiveTab}
           onSettingsOpen={() => setShowSettingsModal(true)}
+          onMenuOpen={() => setSidebarOpen(true)}
         />
 
         <main className="flex-1 overflow-y-auto">

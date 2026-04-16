@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { GoogleGenAI } from "@google/genai";
+import { requireUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
+    await requireUser();
     const { prompt, referenceImageUrl } = await req.json();
 
     if (!prompt) {
@@ -111,6 +113,9 @@ export async function POST(req: NextRequest) {
       model_used: "gemini-3.1-flash-image-preview",
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     console.error("POST /api/generate/gemini error:", error);
     return NextResponse.json(
       { error: "Failed to generate image", details: String(error) },

@@ -1,15 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
+import { requireUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await requireUser();
     const characterId = req.nextUrl.searchParams.get("characterId");
     if (!characterId) {
       return NextResponse.json({ error: "characterId is required" }, { status: 400 });
     }
 
     const db = await getDb();
+
+    // Verify the character belongs to this user (or user is owner)
+    if (user.role !== "owner") {
+      const character = await db.collection("characters").findOne({
+        _id: new ObjectId(characterId),
+        user_id: new ObjectId(user._id),
+      });
+      if (!character) {
+        return NextResponse.json({ error: "Character not found" }, { status: 404 });
+      }
+    }
+
     const images = await db
       .collection("character_images")
       .find({ character_id: new ObjectId(characterId) })
@@ -18,6 +32,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(images);
   } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     console.error("GET /api/images error:", error);
     return NextResponse.json({ error: "Failed to fetch images" }, { status: 500 });
   }
@@ -25,6 +42,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await requireUser();
     const body = await req.json();
     const { character_id, category, subcategory, image_url, prompt_used, model_used } = body;
 
@@ -48,8 +66,21 @@ export async function POST(req: NextRequest) {
     }
 
     const db = await getDb();
+
+    // Verify the character belongs to this user (or user is owner)
+    if (user.role !== "owner") {
+      const character = await db.collection("characters").findOne({
+        _id: new ObjectId(character_id),
+        user_id: new ObjectId(user._id),
+      });
+      if (!character) {
+        return NextResponse.json({ error: "Character not found" }, { status: 404 });
+      }
+    }
+
     const image = {
       character_id: new ObjectId(character_id),
+      user_id: new ObjectId(user._id),
       category: category || "custom",
       subcategory: subcategory || "custom",
       image_url,
@@ -62,6 +93,9 @@ export async function POST(req: NextRequest) {
     const result = await db.collection("character_images").insertOne(image);
     return NextResponse.json({ ...image, _id: result.insertedId }, { status: 201 });
   } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     console.error("POST /api/images error:", error);
     return NextResponse.json({ error: "Failed to save image" }, { status: 500 });
   }

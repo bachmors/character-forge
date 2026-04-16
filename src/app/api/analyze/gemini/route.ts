@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
+import { requireUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
+    await requireUser();
     const { imageBase64, mimeType } = await req.json();
 
     if (!imageBase64) {
@@ -93,6 +95,9 @@ Return ONLY the JSON object, no markdown formatting or extra text.`,
       );
     }
   } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     console.error("POST /api/analyze/gemini error:", error);
     return NextResponse.json({ error: "Failed to analyze image" }, { status: 500 });
   }

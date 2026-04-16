@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import AuthGate from "./components/AuthGate";
 
 export const metadata: Metadata = {
   title: "Character Forge — AI Character Dataset Manager",
@@ -22,7 +23,7 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased bg-bg text-text font-sans">
-        {children}
+        <AuthGate>{children}</AuthGate>
       </body>
     </html>
   );

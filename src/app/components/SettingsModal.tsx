@@ -15,9 +15,10 @@ interface SettingsData {
 
 const API_KEY_FIELDS = [
   { key: "googleAi", label: "Google AI (Gemini)", placeholder: "AIzaSy..." },
-  { key: "openAi", label: "OpenAI (DALL-E)", placeholder: "sk-..." },
-  { key: "replicate", label: "Replicate (SDXL, Flux)", placeholder: "r8_..." },
-  { key: "stabilityAi", label: "Stability AI", placeholder: "sk-..." },
+  // Non-functional providers — re-enable once their generation routes are wired up.
+  // { key: "openAi", label: "OpenAI (DALL-E)", placeholder: "sk-..." },
+  // { key: "replicate", label: "Replicate (SDXL, Flux)", placeholder: "r8_..." },
+  // { key: "stabilityAi", label: "Stability AI", placeholder: "sk-..." },
 ];
 
 export default function SettingsModal({ open, onClose }: SettingsModalProps) {

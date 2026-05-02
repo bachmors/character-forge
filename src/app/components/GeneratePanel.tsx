@@ -446,7 +446,10 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
                   Generating...
                 </span>
               ) : (
-                "Generate with Gemini"
+                <>
+                  <span className="hidden md:inline">Generate with Gemini</span>
+                  <span className="md:hidden">Generate</span>
+                </>
               )}
             </button>
           </div>

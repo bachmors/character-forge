@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
         console.warn("Could not fetch reference image:", e);
       }
       parts.push({
-        text: `Generate an image based on this description. Use the provided reference image as a guide for character consistency.\n\n${prompt}`,
+        text: `Generate an image based on this description. Use the provided reference image ONLY for facial features, body type, hair, skin, and character identity — preserve those exactly. IGNORE the clothing, outfit, and accessories from the reference image: instead, apply the clothing and styling specified in the prompt below. The clothing/outfit in the output must match the prompt, NOT the reference image.\n\n${prompt}`,
       });
       contents = [{ role: "user", parts }];
     } else {

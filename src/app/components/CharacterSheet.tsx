@@ -169,19 +169,30 @@ export default function CharacterSheet({ character, onUpdate, onLightboxOpen }: 
 
   return (
     <div className="max-w-2xl mx-auto p-4 md:p-6 animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-2 flex-wrap">
         <h3 className="font-serif text-accent text-lg font-semibold">Character Sheet</h3>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-            saved
-              ? "bg-success/20 text-success border border-success/30"
-              : "bg-accent text-bg hover:bg-accent-hover"
-          } disabled:opacity-50`}
-        >
-          {saving ? "Saving..." : saved ? "Saved!" : "Save Changes"}
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/character/${character._id}/sheet`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-1.5 rounded-lg border border-accent/30 text-accent hover:bg-accent/10 text-sm font-medium transition-colors"
+            title="Open a printable character bible page"
+          >
+            Export Sheet
+          </a>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              saved
+                ? "bg-success/20 text-success border border-success/30"
+                : "bg-accent text-bg hover:bg-accent-hover"
+            } disabled:opacity-50`}
+          >
+            {saving ? "Saving..." : saved ? "Saved!" : "Save Changes"}
+          </button>
+        </div>
       </div>
 
       <div className="space-y-5">

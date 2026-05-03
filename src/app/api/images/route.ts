@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
     const body = await req.json();
-    const { character_id, category, subcategory, image_url, prompt_used, model_used } = body;
+    const { character_id, category, subcategory, image_url, prompt_used, model_used, target_age } = body;
 
     if (!character_id || !image_url) {
       return NextResponse.json(
@@ -78,6 +78,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const ageNum =
+      typeof target_age === "number"
+        ? target_age
+        : typeof target_age === "string" && target_age.trim() !== ""
+          ? Number(target_age)
+          : null;
     const image = {
       character_id: new ObjectId(character_id),
       user_id: new ObjectId(user._id),
@@ -86,6 +92,7 @@ export async function POST(req: NextRequest) {
       image_url,
       prompt_used: prompt_used || "",
       model_used: model_used || "unknown",
+      target_age: ageNum !== null && Number.isFinite(ageNum) ? ageNum : null,
       selected: false,
       created_at: new Date(),
     };

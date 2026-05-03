@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import {
-  STANDARD_POSES, CATEGORIES, CLOTHING_STYLES, CLOTHING_DESCRIPTIONS,
+  STANDARD_POSES, CATEGORIES, CLOTHING_STYLES, CLOTHING_DESCRIPTIONS, AGE_PRESETS,
   buildPrompt, type CharacterTraits, type PoseDefinition,
 } from "@/lib/prompts";
 import { compressImage } from "@/lib/imageUtils";
@@ -44,9 +44,12 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
   const [generating, setGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [generatedModelUsed, setGeneratedModelUsed] = useState<string>("");
+  const [generatedTargetAge, setGeneratedTargetAge] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [clothingStyle, setClothingStyle] = useState("default");
   const [customClothing, setCustomClothing] = useState("");
+  const [agePresetId, setAgePresetId] = useState<string>("default");
+  const [customAge, setCustomAge] = useState<string>("");
 
   // Batch generation state
   const [batchGenerating, setBatchGenerating] = useState(false);
@@ -60,6 +63,17 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
     if (clothingStyle === "custom") return customClothing || undefined;
     return CLOTHING_DESCRIPTIONS[clothingStyle] || undefined;
   }, [clothingStyle, customClothing]);
+
+  // Resolve the currently selected age into a number, or null for "as reference".
+  const getTargetAge = useCallback((): number | null => {
+    if (agePresetId === "default") return null;
+    if (agePresetId === "custom") {
+      const n = Number(customAge);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    }
+    const preset = AGE_PRESETS.find((p) => p.id === agePresetId);
+    return preset?.value ?? null;
+  }, [agePresetId, customAge]);
 
   const handlePoseSelect = (pose: PoseDefinition) => {
     setSelectedPose(pose);
@@ -90,13 +104,14 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
 
   // Generate a single image via Gemini
   const generateImage = useCallback(
-    async (prompt: string): Promise<{ image_url: string; model_used: string } | null> => {
+    async (prompt: string, age: number | null): Promise<{ image_url: string; model_used: string } | null> => {
       const res = await fetch("/api/generate/gemini", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt,
           referenceImageUrl: character.base_image_url || undefined,
+          targetAge: age,
         }),
       });
       const data = await res.json();
@@ -116,6 +131,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       subcategory: string,
       promptUsed: string,
       modelUsed: string,
+      age: number | null,
     ) => {
       const compressed = await compressImage(imageUrl);
       const res = await fetch("/api/images", {
@@ -128,6 +144,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
           image_url: compressed,
           prompt_used: promptUsed,
           model_used: modelUsed,
+          target_age: age,
         }),
       });
       if (!res.ok) {
@@ -147,10 +164,12 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
     setGeneratedImage(null);
 
     try {
-      const result = await generateImage(prompt);
+      const age = getTargetAge();
+      const result = await generateImage(prompt, age);
       if (result) {
         setGeneratedImage(result.image_url);
         setGeneratedModelUsed(result.model_used);
+        setGeneratedTargetAge(age);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error. Please try again.");
@@ -170,9 +189,11 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
         isCustom ? "custom" : selectedPose?.subcategory || "custom",
         isCustom ? customPrompt : editedPrompt,
         generatedModelUsed || "gemini",
+        generatedTargetAge,
       );
       onImageGenerated();
       setGeneratedImage(null);
+      setGeneratedTargetAge(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
       console.error("Failed to save:", err);
@@ -197,7 +218,8 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
           character.name,
           getClothingDescription(),
         );
-        const result = await generateImage(prompt);
+        const age = getTargetAge();
+        const result = await generateImage(prompt, age);
         if (result) {
           await saveImage(
             result.image_url,
@@ -205,6 +227,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
             pose.subcategory,
             prompt,
             result.model_used,
+            age,
           );
           onImageGenerated();
         }
@@ -343,6 +366,58 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
               />
             )}
           </div>
+
+          {/* Age (collapsible — out of the way for users who don't need it) */}
+          <details className="border border-border rounded-lg group">
+            <summary className="px-3 py-2 cursor-pointer text-sm text-muted hover:text-text transition-colors flex items-center justify-between list-none">
+              <span>
+                Age{" "}
+                <span className="text-xs text-muted/60">
+                  ({agePresetId === "default"
+                    ? "as reference"
+                    : agePresetId === "custom"
+                      ? customAge
+                        ? `${customAge} yrs`
+                        : "custom"
+                      : AGE_PRESETS.find((p) => p.id === agePresetId)?.label || "—"})
+                </span>
+              </span>
+              <span className="text-muted/60 transition-transform group-open:rotate-90">›</span>
+            </summary>
+            <div className="px-3 pb-3 pt-1 space-y-2">
+              <div className="flex flex-wrap gap-2">
+                {AGE_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => setAgePresetId(preset.id)}
+                    className={`px-3 py-1 rounded-lg text-xs transition-colors border ${
+                      agePresetId === preset.id
+                        ? "bg-accent/15 text-accent border-accent/30"
+                        : "text-muted border-border hover:border-border-strong hover:text-text"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              {agePresetId === "custom" && (
+                <input
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={customAge}
+                  onChange={(e) => setCustomAge(e.target.value)}
+                  placeholder="Age in years (e.g. 42)"
+                  className="w-full bg-bg border border-border rounded-lg px-3 py-1.5 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
+                />
+              )}
+              <p className="text-xs text-muted/60">
+                When set, the character will be aged/de-aged to this target while
+                keeping their core facial features and identity.
+              </p>
+            </div>
+          </details>
 
           {/* Category selector */}
           <div>

@@ -14,6 +14,7 @@ interface CharacterImage {
   model_used: string;
   selected: boolean;
   favorite: boolean;
+  target_age?: number | null;
   created_at: string;
 }
 
@@ -286,6 +287,14 @@ export default function DatasetGrid({
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-bg">
                       <polyline points="20 6 9 17 4 12" />
                     </svg>
+                  </div>
+                )}
+                {typeof image.target_age === "number" && image.target_age > 0 && (
+                  <div
+                    className="h-5 px-1.5 rounded-full bg-bg/80 border border-accent/30 flex items-center justify-center text-[10px] font-semibold text-accent"
+                    title={`Generated at age ${image.target_age}`}
+                  >
+                    {image.target_age}y
                   </div>
                 )}
               </div>

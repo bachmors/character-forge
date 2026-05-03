@@ -208,6 +208,31 @@ export const CLOTHING_STYLES = [
   { id: "custom", label: "Custom" },
 ] as const;
 
+export const AGE_PRESETS = [
+  { id: "default", label: "As reference", value: null as number | null },
+  { id: "child", label: "Child (5-10)", value: 8 },
+  { id: "teenager", label: "Teenager (13-17)", value: 15 },
+  { id: "young_adult", label: "Young Adult (20-25)", value: 22 },
+  { id: "adult", label: "Adult (30-40)", value: 35 },
+  { id: "middle_aged", label: "Middle-aged (45-55)", value: 50 },
+  { id: "senior", label: "Senior (65-75)", value: 70 },
+  { id: "elderly", label: "Elderly (80+)", value: 82 },
+  { id: "custom", label: "Custom age…", value: null as number | null },
+] as const;
+
+export type AgePresetId = (typeof AGE_PRESETS)[number]["id"];
+
+/**
+ * Returns an instruction string to append to a generation prompt for the
+ * requested age, or an empty string when no age modification is requested.
+ *
+ * @param age Numeric target age, or null/undefined to skip age modification.
+ */
+export function buildAgeInstruction(age: number | null | undefined): string {
+  if (age === null || age === undefined || Number.isNaN(age)) return "";
+  return ` Generate this character at approximately ${age} years old. Maintain their core facial features, bone structure, and distinguishing characteristics, but naturally age/de-age them to match the target age. Show appropriate signs of aging (or youth) in skin, hair, body posture, and facial features.`;
+}
+
 export const CLOTHING_DESCRIPTIONS: Record<string, string> = {
   default: "",
   casual: "casual everyday clothing like jeans and a comfortable top",

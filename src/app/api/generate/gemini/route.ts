@@ -2,15 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { GoogleGenAI } from "@google/genai";
 import { requireUser } from "@/lib/auth";
+import { buildAgeInstruction } from "@/lib/prompts";
 
 export async function POST(req: NextRequest) {
   try {
     await requireUser();
-    const { prompt, referenceImageUrl } = await req.json();
+    const { prompt, referenceImageUrl, targetAge } = await req.json();
 
     if (!prompt) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
+
+    const ageNum =
+      typeof targetAge === "number"
+        ? targetAge
+        : typeof targetAge === "string" && targetAge.trim() !== ""
+          ? Number(targetAge)
+          : null;
+    const ageInstruction = buildAgeInstruction(
+      ageNum !== null && Number.isFinite(ageNum) ? ageNum : null,
+    );
+    const finalPrompt = ageInstruction ? `${prompt}\n\n${ageInstruction.trim()}` : prompt;
 
     const session = await getSession();
     const apiKey = session.apiKeys?.googleAi || process.env.GOOGLE_AI_API_KEY;
@@ -50,11 +62,11 @@ export async function POST(req: NextRequest) {
         console.warn("Could not fetch reference image:", e);
       }
       parts.push({
-        text: `Generate an image based on this description. Use the provided reference image ONLY for facial features, body type, hair, skin, and character identity — preserve those exactly. IGNORE the clothing, outfit, and accessories from the reference image: instead, apply the clothing and styling specified in the prompt below. The clothing/outfit in the output must match the prompt, NOT the reference image.\n\n${prompt}`,
+        text: `Generate an image based on this description. Use the provided reference image ONLY for facial features, body type, hair, skin, and character identity — preserve those exactly. IGNORE the clothing, outfit, and accessories from the reference image: instead, apply the clothing and styling specified in the prompt below. The clothing/outfit in the output must match the prompt, NOT the reference image.\n\n${finalPrompt}`,
       });
       contents = [{ role: "user", parts }];
     } else {
-      contents = `Generate an image based on this description:\n\n${prompt}`;
+      contents = `Generate an image based on this description:\n\n${finalPrompt}`;
     }
 
     const response = await ai.models.generateContent({

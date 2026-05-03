@@ -17,6 +17,7 @@ import { ideogram } from "./ideogram";
 import { anthropic } from "./anthropic";
 import { replicate } from "./replicate";
 import { recraft } from "./recraft";
+import { venice } from "./venice";
 
 export interface ReferenceImage {
   /** base64-encoded image data without the data: URL prefix */
@@ -62,6 +63,7 @@ export interface ImageProvider {
 
 export const PROVIDERS: ImageProvider[] = [
   gemini,
+  venice,
   openai,
   stability,
   flux,
@@ -93,4 +95,7 @@ export const FALLBACK_IMAGE_MODELS: Array<{ id: string; provider: string; name: 
   { id: "flux-kontext-pro", provider: "flux", name: "FLUX Kontext Pro" },
   { id: "ideogram-v3", provider: "ideogram", name: "Ideogram v3" },
   { id: "recraft-v3", provider: "recraft", name: "Recraft v3" },
+  { id: "fluently-xl", provider: "venice", name: "Fluently XL (Venice)" },
+  { id: "flux-dev", provider: "venice", name: "FLUX Dev (Venice)" },
+  { id: "flux-dev-uncensored", provider: "venice", name: "FLUX Dev Uncensored (Venice)" },
 ];

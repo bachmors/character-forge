@@ -28,6 +28,7 @@ export interface SessionData {
     flux?: string;
     ideogram?: string;
     recraft?: string;
+    venice?: string;
     [providerId: string]: string | undefined;
   };
   /** Favorited model ids (for the model selector in the generation panel). */

@@ -111,7 +111,9 @@ export async function POST(req: NextRequest) {
                   ? "ideogram"
                   : /^recraft/i.test(model_used)
                     ? "recraft"
-                    : null
+                    : /^(fluently|flux-?dev|venice)/i.test(model_used)
+                      ? "venice"
+                      : null
         : null);
     const image = {
       character_id: new ObjectId(character_id),

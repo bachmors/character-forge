@@ -42,17 +42,21 @@ export async function POST(req: NextRequest) {
       model?: string;
     } = await req.json();
 
-    // Multi-provider routing (Phase A). For non-Gemini models we currently
-    // return a friendly 501 — the provider abstraction lives in
-    // src/lib/providers but only Gemini is wired up. The selected model id
-    // travels with the response so the gallery can record what was used.
+    // Multi-provider routing. Models are dispatched to the right provider
+    // implementation in src/lib/providers; non-implemented providers
+    // surface a friendly 501. Each implemented provider runs its own
+    // generation logic below, after the prompt augmentations (clothing,
+    // age, psychology, cinematography, etc.) have been composed.
     const requestedModel = modelId || "gemini-3.1-flash-image-preview";
     const isGemini = /^gemini/i.test(requestedModel);
-    if (!isGemini) {
+    const isVenice = /^(fluently|flux-?dev|venice)/i.test(requestedModel);
+
+    if (!isGemini && !isVenice) {
       return NextResponse.json(
         {
-          error: `Generation with "${requestedModel}" is not yet implemented in this build. The provider scaffold is in place — see src/lib/providers — but this run still routes Gemini only.`,
+          error: `Generation with "${requestedModel}" is not yet implemented in this build. The provider scaffold is in place — see src/lib/providers — but this run still routes Gemini and Venice only.`,
           requested_model: requestedModel,
+          category: "not_implemented",
         },
         { status: 501 },
       );
@@ -98,11 +102,56 @@ export async function POST(req: NextRequest) {
     if (artStyleInstruction) finalPrompt = `${finalPrompt}\n\n${artStyleInstruction.trim()}`;
 
     const session = await getSession();
+
+    // ── Venice branch (text-only — Venice doesn't accept reference images).
+    if (isVenice) {
+      const veniceKey = session.apiKeys?.venice || process.env.VENICE_API_KEY;
+      if (!veniceKey) {
+        return NextResponse.json(
+          {
+            error: "Venice API key not configured. Add it in Settings.",
+            category: "auth",
+          },
+          { status: 400 },
+        );
+      }
+      try {
+        const { venice } = await import("@/lib/providers/venice");
+        const result = await venice.generateImage(veniceKey, requestedModel, {
+          prompt: finalPrompt,
+          aspectRatio: "1:1",
+          imageSize: "1K",
+        });
+        return NextResponse.json({
+          image_url: result.imageDataUrl,
+          text_response: result.textResponse || "",
+          model_used: result.modelUsed,
+          provider: result.provider,
+        });
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : String(err);
+        const lower = raw.toLowerCase();
+        let category: "rate" | "auth" | "size" | "network" | "other" = "other";
+        let status = 500;
+        if (/quota|rate.?limit|429/.test(lower)) {
+          category = "rate";
+          status = 429;
+        } else if (/api[ _]?key|unauthorized|401|403/.test(lower)) {
+          category = "auth";
+          status = 401;
+        } else if (/fetch|network|timeout|enotfound/.test(lower)) {
+          category = "network";
+        }
+        return NextResponse.json({ error: raw, category, raw }, { status });
+      }
+    }
+
+    // ── Gemini branch
     const apiKey = session.apiKeys?.googleAi || process.env.GOOGLE_AI_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Google AI API key not configured. Add it in Settings." },
+        { error: "Google AI API key not configured. Add it in Settings.", category: "auth" },
         { status: 400 }
       );
     }

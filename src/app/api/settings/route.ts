@@ -28,6 +28,7 @@ export async function GET() {
         flux: !!keys.flux,
         ideogram: !!keys.ideogram,
         recraft: !!keys.recraft,
+        venice: !!keys.venice,
       },
     });
   } catch (error) {

@@ -117,7 +117,9 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       id: string;
       name: string;
       provider: string;
+      provider_name?: string;
       provider_implemented: boolean;
+      provider_has_key?: boolean;
       is_custom?: boolean;
       uncensored?: boolean;
       supports_reference_image?: boolean;
@@ -1455,81 +1457,93 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
                 </option>
               ) : (
                 (() => {
-                  // Group rendering: reference-capable / uncensored /
-                  // standard / custom / other. Within each group keep the
-                  // server's order (recommended ones surface first inside
-                  // the "ref" group via the curated metadata).
-                  const groups: Record<string, typeof availableModels> = {
-                    ref: [],
-                    uncensored: [],
-                    standard: [],
-                    custom: [],
-                    other: [],
-                  };
+                  // Group by provider. Active providers (with stored API
+                  // keys) come first; locked providers come last.
+                  const byProvider = new Map<
+                    string,
+                    {
+                      providerKey: string;
+                      providerName: string;
+                      hasKey: boolean;
+                      models: typeof availableModels;
+                    }
+                  >();
                   for (const m of availableModels) {
-                    if (m.is_custom) groups.custom.push(m);
-                    else if (m.supports_reference_image) groups.ref.push(m);
-                    else if (m.uncensored) groups.uncensored.push(m);
-                    else if (m.group === "standard") groups.standard.push(m);
-                    else groups.other.push(m);
+                    const key = m.provider;
+                    const entry = byProvider.get(key) || {
+                      providerKey: key,
+                      providerName: m.provider_name || m.provider,
+                      hasKey: m.provider_has_key === true || m.is_custom === true,
+                      models: [],
+                    };
+                    entry.models.push(m);
+                    byProvider.set(key, entry);
                   }
-                  const renderOption = (m: (typeof availableModels)[number]) => {
+                  const ordered = Array.from(byProvider.values()).sort((a, b) => {
+                    if (a.hasKey !== b.hasKey) return a.hasKey ? -1 : 1;
+                    return a.providerName.localeCompare(b.providerName);
+                  });
+
+                  const renderOption = (
+                    m: (typeof availableModels)[number],
+                    locked: boolean,
+                  ) => {
                     const tags: string[] = [];
                     if (m.supports_reference_image) tags.push("📷 ref");
                     if (m.uncensored) tags.push("🔓 uncensored");
                     if (m.paid) tags.push("💰 paid");
                     if (m.recommended) tags.push("★ recommended");
-                    const tail =
-                      tags.length > 0
-                        ? ` — ${tags.join(" · ")}`
-                        : !m.provider_implemented && !m.is_custom
-                          ? " · scaffold"
-                          : "";
+                    const tail = tags.length > 0 ? ` — ${tags.join(" · ")}` : "";
+                    const prefix = locked ? "🔒 " : "";
+                    const lockedSuffix = locked ? " — Add API key in Settings" : "";
                     return (
-                      <option key={m.id} value={m.id}>
-                        {m.name} ({m.is_custom ? "custom" : m.provider})
+                      <option key={m.id} value={m.id} disabled={locked}>
+                        {prefix}
+                        {m.name}
                         {tail}
+                        {lockedSuffix}
                       </option>
                     );
                   };
+
                   return (
                     <>
-                      {groups.ref.length > 0 && (
-                        <optgroup label="📷 Reference Image Support">
-                          {groups.ref.map(renderOption)}
+                      {ordered.map((g) => (
+                        <optgroup
+                          key={g.providerKey}
+                          label={`${g.hasKey ? "✅" : "🔒"} ${g.providerName}${
+                            g.hasKey ? "" : " — No API key"
+                          }`}
+                        >
+                          {g.models.map((m) => renderOption(m, !g.hasKey))}
                         </optgroup>
-                      )}
-                      {groups.uncensored.length > 0 && (
-                        <optgroup label="🎬 Uncensored (Film Production)">
-                          {groups.uncensored.map(renderOption)}
-                        </optgroup>
-                      )}
-                      {groups.standard.length > 0 && (
-                        <optgroup label="🎨 Standard">
-                          {groups.standard.map(renderOption)}
-                        </optgroup>
-                      )}
-                      {groups.custom.length > 0 && (
-                        <optgroup label="🛠 Custom Providers">
-                          {groups.custom.map(renderOption)}
-                        </optgroup>
-                      )}
-                      {groups.other.length > 0 && (
-                        <optgroup label="Other">
-                          {groups.other.map(renderOption)}
-                        </optgroup>
-                      )}
+                      ))}
                     </>
                   );
                 })()
               )}
             </select>
-            {availableModels.find((m) => m.id === selectedModel)?.provider_implemented === false && (
-              <p className="mt-1 text-[11px] text-muted/70 italic">
-                This provider is scaffolded but not yet wired for generation. Generation
-                will return a 501 until the provider is implemented in src/lib/providers.
-              </p>
-            )}
+            {(() => {
+              const cur = availableModels.find((m) => m.id === selectedModel);
+              if (!cur) return null;
+              if (cur.provider_implemented === false && !cur.is_custom) {
+                return (
+                  <p className="mt-1 text-[11px] text-muted/70 italic">
+                    This provider is scaffolded but not yet wired for generation. Generation
+                    will return a 501 until the provider is implemented in src/lib/providers.
+                  </p>
+                );
+              }
+              if (cur.provider_has_key === false && !cur.is_custom) {
+                return (
+                  <p className="mt-1 text-[11px] text-danger/80">
+                    🔒 Add your <span className="text-accent">{cur.provider_name || cur.provider}</span> API
+                    key in Settings to use this model.
+                  </p>
+                );
+              }
+              return null;
+            })()}
           </div>
 
           {/* Smart prompt suggestions (Module 13) */}

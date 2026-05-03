@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { GoogleGenAI } from "@google/genai";
 import { requireUser } from "@/lib/auth";
+import { getUserApiKey } from "@/lib/userSettings";
 import { buildMultiScenePrompt, type ModeId } from "@/lib/scenes";
 import {
   buildCinematographyInstruction,
@@ -29,7 +30,7 @@ interface IncomingCharacter {
  */
 export async function POST(req: NextRequest) {
   try {
-    await requireUser();
+    const authUser = await requireUser();
     const body = await req.json();
     const {
       mode,
@@ -71,7 +72,10 @@ export async function POST(req: NextRequest) {
     }
 
     const session = await getSession();
-    const apiKey = session.apiKeys?.googleAi || process.env.GOOGLE_AI_API_KEY;
+    const apiKey =
+      (await getUserApiKey(authUser._id, "google")) ||
+      session.apiKeys?.googleAi ||
+      process.env.GOOGLE_AI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
         { error: "Google AI API key not configured. Add it in Settings." },

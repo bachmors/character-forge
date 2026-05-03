@@ -23,6 +23,7 @@ import {
   type CustomAuthType,
 } from "@/lib/customProviders";
 import { isVeniceImageModel, veniceModelSupportsRef } from "@/lib/providers/venice";
+import { getUserApiKey, getUserSettings } from "@/lib/userSettings";
 
 export async function POST(req: NextRequest) {
   try {
@@ -183,6 +184,10 @@ export async function POST(req: NextRequest) {
     }
 
     const session = await getSession();
+    // requireUser() was already called near the top of this handler;
+    // re-run lightweight to get the user id for per-user key lookup.
+    const authUser = await requireUser();
+    const userSettings = await getUserSettings(authUser._id);
 
     // ── Custom user-defined provider branch.
     if (customProviderDoc) {
@@ -240,7 +245,10 @@ export async function POST(req: NextRequest) {
     // The provider's generateImage() picks the endpoint based on whether
     // referenceImages[] is present AND the chosen model is reference-capable.
     if (isVenice) {
-      const veniceKey = session.apiKeys?.venice || process.env.VENICE_API_KEY;
+      const veniceKey =
+        (await getUserApiKey(authUser._id, "venice")) ||
+        session.apiKeys?.venice ||
+        process.env.VENICE_API_KEY;
       if (!veniceKey) {
         return NextResponse.json(
           {
@@ -284,7 +292,7 @@ export async function POST(req: NextRequest) {
           prompt: finalPrompt,
           aspectRatio: "1:1",
           imageSize: "1K",
-          safeMode: session.veniceSafeMode === true,
+          safeMode: userSettings.venice_safe_mode === true,
           referenceImages: veniceRefs.length > 0 ? veniceRefs : undefined,
         });
         return NextResponse.json({
@@ -312,7 +320,10 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Gemini branch
-    const apiKey = session.apiKeys?.googleAi || process.env.GOOGLE_AI_API_KEY;
+    const apiKey =
+      (await getUserApiKey(authUser._id, "google")) ||
+      session.apiKeys?.googleAi ||
+      process.env.GOOGLE_AI_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(

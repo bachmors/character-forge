@@ -8,6 +8,7 @@ import {
   PROVIDERS,
   getCuratedModel,
 } from "@/lib/providers";
+import { getUserSettings } from "@/lib/userSettings";
 
 /**
  * Patterns used to filter the shared `ai_models_db.models` collection
@@ -80,7 +81,7 @@ function looksLikeImageGen(doc: ModelDoc): boolean {
  */
 export async function GET(req: NextRequest) {
   try {
-    await requireUser();
+    const user = await requireUser();
     const url = req.nextUrl;
     const providerFilter = url.searchParams.get("provider");
     const q = (url.searchParams.get("q") || "").toLowerCase();
@@ -89,7 +90,9 @@ export async function GET(req: NextRequest) {
       id: string;
       name: string;
       provider: string;
+      provider_name?: string;
       provider_implemented: boolean;
+      provider_has_key?: boolean;
       description?: string;
       is_custom?: boolean;
       custom_provider_id?: string;
@@ -101,6 +104,19 @@ export async function GET(req: NextRequest) {
       group?: "ref" | "uncensored" | "standard";
     }> = [];
     let usedFallback = false;
+
+    // Per-user provider has_key map (drives the dropdown's
+    // active/inactive styling). Custom providers always count as
+    // "has key" since the key is supplied at provider-creation time.
+    const settings = await getUserSettings(user._id);
+    const providerHasKey = (providerId: string): boolean => {
+      if (providerId.startsWith("custom:")) return true;
+      return settings.has_keys[providerId] === true;
+    };
+    const providerNameOf = (providerId: string): string => {
+      const p = PROVIDERS.find((x) => x.id === providerId);
+      return p?.name || providerId;
+    };
 
     // Always seed the result with curated models from IMPLEMENTED providers
     // so Venice/Gemini are visible regardless of whether the shared
@@ -114,11 +130,10 @@ export async function GET(req: NextRequest) {
         id: m.id,
         name: m.name,
         provider: m.provider,
+        provider_name: provider.name,
         provider_implemented: true,
+        provider_has_key: providerHasKey(m.provider),
         uncensored: m.uncensored,
-        // Per-model override takes precedence over the provider-level flag,
-        // because Venice has a single ref-capable model and many that are
-        // not.
         supports_reference_image:
           m.supportsReferenceImage !== undefined
             ? m.supportsReferenceImage
@@ -133,7 +148,6 @@ export async function GET(req: NextRequest) {
     // User-defined custom-provider models always live alongside the
     // registry models, marked with is_custom=true so the UI can badge them.
     try {
-      const user = await requireUser();
       const charDb = await getDb();
       const customProviders = await charDb
         .collection("custom_providers")
@@ -152,7 +166,9 @@ export async function GET(req: NextRequest) {
             id: m.modelId,
             name: `${m.displayName} (${cp.providerName})`,
             provider: `custom:${cp._id}`,
+            provider_name: cp.providerName,
             provider_implemented: true,
+            provider_has_key: true,
             is_custom: true,
             custom_provider_id: String(cp._id),
             supports_reference_image: cp.supportsReferenceImage === true,
@@ -184,11 +200,10 @@ export async function GET(req: NextRequest) {
           id,
           name: String(d.name || id),
           provider,
+          provider_name: providerNameOf(provider),
           provider_implemented: providerDef?.implemented ?? false,
+          provider_has_key: providerHasKey(provider),
           description: d.description,
-          // Carry the curated metadata onto registry rows so the UI
-          // doesn't lose badges/grouping if the registry shadows a curated
-          // model with the same id.
           uncensored: curated?.uncensored,
           supports_reference_image:
             curated?.supportsReferenceImage !== undefined
@@ -213,7 +228,9 @@ export async function GET(req: NextRequest) {
           id: m.id,
           name: m.name,
           provider: m.provider,
+          provider_name: providerDef?.name || m.provider,
           provider_implemented: providerDef?.implemented ?? false,
+          provider_has_key: providerHasKey(m.provider),
           uncensored: m.uncensored,
           supports_reference_image:
             m.supportsReferenceImage !== undefined

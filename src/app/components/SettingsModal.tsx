@@ -322,6 +322,14 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
 
   // Distinct providers represented in the models list (for the filter).
   const providersInModels = Array.from(new Set(models.map((m) => m.provider))).sort();
+
+  // Count models per built-in provider id, used by each provider's
+  // status line ("Connected — X models available" / "No API key — X locked").
+  const modelsByProvider = new Map<string, number>();
+  for (const m of models) {
+    if (m.is_custom) continue;
+    modelsByProvider.set(m.provider, (modelsByProvider.get(m.provider) || 0) + 1);
+  }
   const visibleModels = models.filter((m) => {
     if (providerFilter !== "all" && m.provider !== providerFilter) return false;
     if (availabilityFilter === "available") {
@@ -359,15 +367,22 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
             <div className="space-y-3">
               {providers.map((p) => {
                 const t = tests[p.id];
+                const modelCount = modelsByProvider.get(p.id) || 0;
+                const countStr =
+                  modelCount > 0
+                    ? ` — ${modelCount} model${modelCount === 1 ? "" : "s"} ${
+                        p.has_key ? "available" : "locked"
+                      }`
+                    : "";
                 const status = t?.pending
                   ? { label: "Testing…", cls: "text-muted" }
                   : t
                     ? t.ok
-                      ? { label: "✓ Connected", cls: "text-success" }
+                      ? { label: `✅ Connected${countStr}`, cls: "text-success" }
                       : { label: `✗ ${t.error || "Invalid"}`, cls: "text-danger" }
                     : p.has_key
-                      ? { label: "✓ Key stored", cls: "text-success/80" }
-                      : { label: "⚠ No key", cls: "text-muted" };
+                      ? { label: `✅ Key stored${countStr}`, cls: "text-success/80" }
+                      : { label: `🔒 No API key${countStr}`, cls: "text-muted" };
                 const showKey = show[p.id];
                 const draft = keysDraft[p.id] ?? "";
 

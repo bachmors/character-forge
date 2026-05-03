@@ -18,6 +18,7 @@ const TABS = [
   { id: "sheet", label: "Sheet" },
   { id: "psychology", label: "Psychology" },
   { id: "story", label: "Story" },
+  { id: "moodboard", label: "Mood Board" },
   { id: "relationships", label: "Relationships" },
 ];
 

@@ -10,6 +10,7 @@ import CharacterSheet from "./components/CharacterSheet";
 import RelationshipsPanel from "./components/RelationshipsPanel";
 import PsychologyPanel from "./components/PsychologyPanel";
 import StoryPanel from "./components/StoryPanel";
+import MoodBoardPanel from "./components/MoodBoardPanel";
 import type { CharacterProfile } from "@/lib/profile";
 import CreateCharacterModal from "./components/CreateCharacterModal";
 import ImageModal from "./components/ImageModal";
@@ -305,6 +306,13 @@ function HomeContent() {
                 <StoryPanel
                   character={selectedCharacter}
                   onUpdate={handleUpdateCharacter}
+                />
+              )}
+              {activeTab === "moodboard" && (
+                <MoodBoardPanel
+                  character={selectedCharacter}
+                  onUpdate={handleUpdateCharacter}
+                  onLightboxOpen={setLightboxSrc}
                 />
               )}
               {activeTab === "relationships" && (

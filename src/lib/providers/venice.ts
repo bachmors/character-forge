@@ -106,6 +106,85 @@ function aspectToSize(aspectRatio: string | undefined): string {
   }
 }
 
+/**
+ * Parse a Venice response. Some models honour response_format and return
+ * JSON with b64_json; others ignore it and stream raw image bytes back.
+ * Both endpoints (generate + edit) can hit either case, so we sniff the
+ * content-type before deciding how to decode.
+ */
+async function parseVeniceImageResponse(res: Response): Promise<string> {
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Venice API error ${res.status}: ${text.slice(0, 400) || "unknown"}`);
+  }
+
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+
+  // 1) Direct binary image stream — convert to a data URL using the
+  //    actual mime so the gallery renders the right format.
+  if (contentType.startsWith("image/")) {
+    const buf = await res.arrayBuffer();
+    const b64 = Buffer.from(buf).toString("base64");
+    return `data:${contentType.split(";")[0]};base64,${b64}`;
+  }
+
+  // 2) JSON payload — try the OpenAI shape (data[].b64_json|url) first,
+  //    then the Venice shape (images[].
+  if (contentType.includes("application/json")) {
+    const data = (await res.json()) as {
+      data?: Array<{ b64_json?: string; url?: string }>;
+      images?: Array<string | { b64_json?: string; url?: string }>;
+    };
+    return await pickImageFromJson(data);
+  }
+
+  // 3) Unknown / missing content-type. Read once as ArrayBuffer (so we
+  //    don't lose binary data to UTF-8 decoding) and try both paths.
+  const buf = await res.arrayBuffer();
+  // First, try to parse as JSON — most servers tag JSON correctly so this
+  // path is rare.
+  try {
+    const text = Buffer.from(buf).toString("utf8");
+    const data = JSON.parse(text);
+    return await pickImageFromJson(data);
+  } catch {
+    // Not JSON. Treat the bytes as a raw image and assume PNG (most
+    // common Venice fallback). The caller can always re-encode if needed.
+    const b64 = Buffer.from(buf).toString("base64");
+    return `data:image/png;base64,${b64}`;
+  }
+}
+
+async function pickImageFromJson(data: {
+  data?: Array<{ b64_json?: string; url?: string }>;
+  images?: Array<string | { b64_json?: string; url?: string }>;
+}): Promise<string> {
+  // OpenAI-compatible: { data: [{ b64_json | url }] }
+  const openai = data.data?.[0];
+  if (openai?.b64_json) return `data:image/png;base64,${openai.b64_json}`;
+  if (openai?.url) return await fetchAsDataUrl(openai.url);
+
+  // Venice edit shape: { images: ["<b64>"] } — also accept object form.
+  const ven = data.images?.[0];
+  if (typeof ven === "string") {
+    return ven.startsWith("data:") ? ven : `data:image/png;base64,${ven}`;
+  }
+  if (ven && typeof ven === "object") {
+    if (ven.b64_json) return `data:image/png;base64,${ven.b64_json}`;
+    if (ven.url) return await fetchAsDataUrl(ven.url);
+  }
+
+  throw new Error("Venice returned no image data in the response.");
+}
+
+async function fetchAsDataUrl(url: string): Promise<string> {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Failed to fetch Venice image url: ${r.status}`);
+  const buf = await r.arrayBuffer();
+  const mime = r.headers.get("content-type") || "image/png";
+  return `data:${mime};base64,${Buffer.from(buf).toString("base64")}`;
+}
+
 export const venice: ImageProvider = {
   id: "venice",
   name: "Venice AI",
@@ -162,18 +241,8 @@ export const venice: ImageProvider = {
         },
         body: JSON.stringify(body),
       });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`Venice edit error ${res.status}: ${text.slice(0, 400) || "unknown"}`);
-      }
-      const data = (await res.json()) as { images?: string[] };
-      const first = data.images?.[0];
-      if (!first) throw new Error("Venice edit returned no image data.");
-      return {
-        imageDataUrl: first.startsWith("data:") ? first : `data:image/webp;base64,${first}`,
-        modelUsed: model,
-        provider: "venice",
-      };
+      const imageDataUrl = await parseVeniceImageResponse(res);
+      return { imageDataUrl, modelUsed: model, provider: "venice" };
     }
 
     // ── /v1/images/generations  (OpenAI-compatible)
@@ -191,33 +260,8 @@ export const venice: ImageProvider = {
       },
       body: JSON.stringify(body),
     });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Venice generate error ${res.status}: ${text.slice(0, 400) || "unknown"}`);
-    }
-    const data = (await res.json()) as {
-      data?: Array<{ b64_json?: string; url?: string }>;
-    };
-    const first = data.data?.[0];
-    if (first?.b64_json) {
-      return {
-        imageDataUrl: `data:image/png;base64,${first.b64_json}`,
-        modelUsed: model,
-        provider: "venice",
-      };
-    }
-    if (first?.url) {
-      const imgRes = await fetch(first.url);
-      if (!imgRes.ok) throw new Error(`Failed to fetch Venice image url: ${imgRes.status}`);
-      const buf = await imgRes.arrayBuffer();
-      const mime = imgRes.headers.get("content-type") || "image/png";
-      return {
-        imageDataUrl: `data:${mime};base64,${Buffer.from(buf).toString("base64")}`,
-        modelUsed: model,
-        provider: "venice",
-      };
-    }
-    throw new Error("Venice generate returned no image data.");
+    const imageDataUrl = await parseVeniceImageResponse(res);
+    return { imageDataUrl, modelUsed: model, provider: "venice" };
   },
 
   async testConnection(apiKey: string) {

@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
       cinematography,
       artStyle,
       poseId,
+      model: modelId,
     }: {
       prompt: string;
       referenceImageUrl?: string;
@@ -38,7 +39,24 @@ export async function POST(req: NextRequest) {
       cinematography?: CinematographyChoice | null;
       artStyle?: string | null;
       poseId?: string | null;
+      model?: string;
     } = await req.json();
+
+    // Multi-provider routing (Phase A). For non-Gemini models we currently
+    // return a friendly 501 — the provider abstraction lives in
+    // src/lib/providers but only Gemini is wired up. The selected model id
+    // travels with the response so the gallery can record what was used.
+    const requestedModel = modelId || "gemini-3.1-flash-image-preview";
+    const isGemini = /^gemini/i.test(requestedModel);
+    if (!isGemini) {
+      return NextResponse.json(
+        {
+          error: `Generation with "${requestedModel}" is not yet implemented in this build. The provider scaffold is in place — see src/lib/providers — but this run still routes Gemini only.`,
+          requested_model: requestedModel,
+        },
+        { status: 501 },
+      );
+    }
 
     if (!prompt) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -125,7 +143,7 @@ export async function POST(req: NextRequest) {
     }
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-image-preview",
+      model: requestedModel,
       contents,
       config: {
         responseModalities: ["TEXT", "IMAGE"],
@@ -177,7 +195,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       image_url: dataUrl,
       text_response: textResponse,
-      model_used: "gemini-3.1-flash-image-preview",
+      model_used: requestedModel,
+      provider: "google",
     });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {

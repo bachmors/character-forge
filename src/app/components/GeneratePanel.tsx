@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   STANDARD_POSES, CATEGORIES, CLOTHING_STYLES, CLOTHING_DESCRIPTIONS, AGE_PRESETS, POSE_LIBRARY,
   buildPrompt, type CharacterTraits, type PoseDefinition,
@@ -80,6 +80,39 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
   // Pose library (Module 16). "" means "no pose override — let the pose
   // template / custom prompt decide".
   const [poseId, setPoseId] = useState<string>("");
+
+  // Model selector (Phase A). Loaded from /api/models filtered by available
+  // providers. Defaults to whatever the user marked as default in Settings.
+  const [availableModels, setAvailableModels] = useState<
+    Array<{ id: string; name: string; provider: string; provider_implemented: boolean }>
+  >([]);
+  const [selectedModel, setSelectedModel] = useState<string>("gemini-3.1-flash-image-preview");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [mRes, sRes] = await Promise.all([
+          fetch("/api/models"),
+          fetch("/api/settings"),
+        ]);
+        if (cancelled) return;
+        if (mRes.ok) {
+          const data = await mRes.json();
+          setAvailableModels(Array.isArray(data.models) ? data.models : []);
+        }
+        if (sRes.ok) {
+          const s = await sRes.json();
+          if (s.defaultModel) setSelectedModel(s.defaultModel);
+        }
+      } catch {
+        // network errors are non-fatal — the existing default falls through
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Batch generation state
   const [batchGenerating, setBatchGenerating] = useState(false);
@@ -195,6 +228,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
           },
           artStyle: cinematography.artStyle,
           poseId: poseId || undefined,
+          model: selectedModel,
         }),
       });
       const data = await res.json();
@@ -203,7 +237,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       }
       return { image_url: data.image_url, model_used: data.model_used };
     },
-    [character.base_image_url, character.profile, emotionalOverride, emotionalOverrideCustom, cinematography, poseId],
+    [character.base_image_url, character.profile, emotionalOverride, emotionalOverrideCustom, cinematography, poseId, selectedModel],
   );
 
   // Compress and save an image
@@ -1241,6 +1275,37 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
               </p>
             </div>
           </details>
+
+          {/* Model selector (Phase A — multi-provider) */}
+          <div>
+            <label className="block text-xs text-muted mb-1 uppercase tracking-wide">
+              Model
+            </label>
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-text focus:outline-none focus:border-accent/30 transition-colors"
+            >
+              {availableModels.length === 0 ? (
+                <option value="gemini-3.1-flash-image-preview">
+                  Gemini 3.1 Flash (image preview)
+                </option>
+              ) : (
+                availableModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} ({m.provider}
+                    {!m.provider_implemented ? " · scaffold" : ""})
+                  </option>
+                ))
+              )}
+            </select>
+            {availableModels.find((m) => m.id === selectedModel)?.provider_implemented === false && (
+              <p className="mt-1 text-[11px] text-muted/70 italic">
+                This provider is scaffolded but not yet wired for generation. Generation
+                will return a 501 until the provider is implemented in src/lib/providers.
+              </p>
+            )}
+          </div>
 
           {/* Smart prompt suggestions (Module 13) */}
           <details className="border border-border rounded-lg group">

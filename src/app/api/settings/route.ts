@@ -14,12 +14,20 @@ export async function GET() {
     }
     return NextResponse.json({
       apiKeys: masked,
-      defaultModel: session.defaultModel || "gemini",
+      defaultModel: session.defaultModel || "gemini-3.1-flash-image-preview",
+      favoriteModels: session.favoriteModels || [],
       hasKeys: {
         googleAi: !!keys.googleAi,
         openAi: !!keys.openAi,
         replicate: !!keys.replicate,
         stabilityAi: !!keys.stabilityAi,
+        google: !!keys.google,
+        anthropic: !!keys.anthropic,
+        openai: !!keys.openai,
+        stability: !!keys.stability,
+        flux: !!keys.flux,
+        ideogram: !!keys.ideogram,
+        recraft: !!keys.recraft,
       },
     });
   } catch (error) {
@@ -46,6 +54,9 @@ export async function POST(req: NextRequest) {
 
     if (body.defaultModel) {
       session.defaultModel = body.defaultModel;
+    }
+    if (Array.isArray(body.favoriteModels)) {
+      session.favoriteModels = body.favoriteModels.filter((x: unknown) => typeof x === "string");
     }
 
     await session.save();

@@ -251,17 +251,41 @@ export async function POST(req: NextRequest) {
         );
       }
       try {
-        // All Venice image models are text-to-image (OpenAI-compatible
-        // /v1/images/generations). The CHARACTER APPEARANCE block was
-        // already appended to finalPrompt earlier in this route — Venice
-        // gets identity entirely through the prompt.
+        // Venice has two image systems:
+        //   - generate: text-to-image (no reference)
+        //   - edit:     image-to-image (reference REQUIRED)
+        // Load the character's reference into options.referenceImages
+        // when the chosen model is an edit model so the provider routes
+        // to /v1/image/edit. For text-only models, identity rides in the
+        // CHARACTER APPEARANCE block the route appended earlier.
+        const veniceRefs: Array<{ data: string; mimeType: string }> = [];
+        if (veniceModelSupportsRef(requestedModel) && referenceImageUrl) {
+          try {
+            if (referenceImageUrl.startsWith("data:")) {
+              const m = referenceImageUrl.match(/^data:(.+?);base64,(.+)$/);
+              if (m) veniceRefs.push({ mimeType: m[1], data: m[2] });
+            } else {
+              const r = await fetch(referenceImageUrl);
+              if (r.ok) {
+                const buf = await r.arrayBuffer();
+                veniceRefs.push({
+                  mimeType: r.headers.get("content-type") || "image/jpeg",
+                  data: Buffer.from(buf).toString("base64"),
+                });
+              }
+            }
+          } catch (e) {
+            console.warn("Venice: could not load reference image:", e);
+          }
+        }
+
         const { venice } = await import("@/lib/providers/venice");
         const result = await venice.generateImage(veniceKey, requestedModel, {
           prompt: finalPrompt,
           aspectRatio: "1:1",
           imageSize: "1K",
-          // safe_mode comes from per-user Settings; defaults to false.
           safeMode: session.veniceSafeMode === true,
+          referenceImages: veniceRefs.length > 0 ? veniceRefs : undefined,
         });
         return NextResponse.json({
           image_url: result.imageDataUrl,

@@ -149,9 +149,16 @@ export const FALLBACK_IMAGE_MODELS: CuratedModel[] = [
     uncensored: m.uncensored,
     paid: m.paid,
     privateModel: m.privateModel,
-    // Venice image models are all text-to-image today.
-    supportsReferenceImage: false,
-    group: m.group,
+    recommended: m.recommended,
+    // Edit models accept a reference image; generate models don't.
+    supportsReferenceImage: m.endpoint === "edit",
+    // UI grouping: edit models go in "ref"; uncensored generate models go
+    // in "uncensored"; everything else generate goes in "standard".
+    group: (m.endpoint === "edit"
+      ? "ref"
+      : m.uncensored
+        ? "uncensored"
+        : "standard") as "ref" | "uncensored" | "standard",
   })),
 ];
 

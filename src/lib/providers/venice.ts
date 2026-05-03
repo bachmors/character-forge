@@ -3,68 +3,97 @@ import type { ImageProvider, GenerationOptions, GenerationResult } from ".";
 /**
  * Venice AI provider — IMPLEMENTED.
  *
- * Per Venice docs the image API is OpenAI-compatible:
- *   POST https://api.venice.ai/api/v1/images/generations
- *   Header:  Authorization: Bearer <apiKey>
- *   Body:    { model, prompt, size, response_format, safe_mode? }
- *   Resp:    { data: [{ b64_json }, ...] }
+ * Venice exposes TWO separate image systems with different model IDs and
+ * different request/response shapes:
  *
- * All Venice image models are TEXT-TO-IMAGE — none accept a reference
- * image. Identity has to ride in the prompt (the route appends a
- * CHARACTER APPEARANCE block when the chosen model can't take a ref).
+ *   GENERATE — text-to-image, OpenAI-compatible
+ *     POST https://api.venice.ai/api/v1/images/generations
+ *     body: { model, prompt, size, response_format: "b64_json" }
+ *     resp: { data: [{ b64_json | url }, ...] }
  *
- * The previous /image/edit and /image/generate paths in this file were
- * wrong — replaced entirely by /images/generations.
+ *   EDIT — image-to-image (reference required)
+ *     POST https://api.venice.ai/api/v1/image/edit
+ *     body: { model, prompt, image, safe_mode }   (raw base64 in `image`)
+ *     resp: { images: ["<base64>", ...] }
+ *
+ * Routing is decided per-model via the `endpoint` field in the metadata
+ * tables below. The two lists are kept separate so the model selector can
+ * group them and the route can pick the right URL/body shape automatically.
  */
 
 interface VeniceModelMeta {
   id: string;
   displayName: string;
+  endpoint: "generate" | "edit";
   uncensored?: boolean;
   paid?: boolean;
   privateModel?: boolean;
-  group: "uncensored" | "standard";
+  recommended?: boolean;
+  /** Display-only price chip (e.g. "$0.01", "free", "paid"). */
+  price?: string;
 }
 
-export const VENICE_IMAGE_MODELS: VeniceModelMeta[] = [
-  // Uncensored (text-only)
-  { id: "z-image-turbo", displayName: "Z-Image Turbo", uncensored: true, privateModel: true, group: "uncensored" },
-  { id: "seedream-v4-5", displayName: "Seedream V4.5", uncensored: true, group: "uncensored" },
-  { id: "seedream-v5-lite", displayName: "Seedream V5 Lite", uncensored: true, group: "uncensored" },
-  { id: "lustify-sdxl", displayName: "Lustify SDXL", uncensored: true, privateModel: true, paid: true, group: "uncensored" },
-  { id: "lustify-v8", displayName: "Lustify V8", uncensored: true, privateModel: true, paid: true, group: "uncensored" },
-  { id: "anime-wai", displayName: "Anime WAI", uncensored: true, privateModel: true, paid: true, group: "uncensored" },
-  { id: "chroma", displayName: "Chroma", uncensored: true, privateModel: true, paid: true, group: "uncensored" },
+/** Text-to-image models — /v1/images/generations, OpenAI-compatible. */
+export const VENICE_GENERATE_MODELS: VeniceModelMeta[] = [
+  // Uncensored
+  { id: "z-image-turbo", displayName: "Z-Image Turbo", endpoint: "generate", uncensored: true, privateModel: true, price: "free" },
+  { id: "seedream-v4-5", displayName: "Seedream V4.5", endpoint: "generate", uncensored: true, paid: true, price: "paid" },
+  { id: "seedream-v5-lite", displayName: "Seedream V5 Lite", endpoint: "generate", uncensored: true, paid: true, price: "paid" },
+  { id: "lustify-sdxl", displayName: "Lustify SDXL", endpoint: "generate", uncensored: true, privateModel: true, paid: true, price: "paid" },
+  { id: "lustify-v8", displayName: "Lustify V8", endpoint: "generate", uncensored: true, privateModel: true, paid: true, price: "paid" },
+  { id: "anime-wai", displayName: "Anime WAI", endpoint: "generate", uncensored: true, privateModel: true, paid: true, price: "paid" },
+  { id: "chroma", displayName: "Chroma", endpoint: "generate", uncensored: true, privateModel: true, paid: true, price: "paid" },
 
   // Standard
-  { id: "qwen-image", displayName: "Qwen Image", privateModel: true, paid: true, group: "standard" },
-  { id: "qwen-image-2", displayName: "Qwen Image 2", paid: true, group: "standard" },
-  { id: "qwen-image-2-pro", displayName: "Qwen Image 2 Pro", paid: true, group: "standard" },
-  { id: "venice-sd35", displayName: "Venice SD 3.5", privateModel: true, group: "standard" },
-  { id: "grok-imagine-image-pro", displayName: "Grok Imagine Pro", privateModel: true, paid: true, group: "standard" },
-  { id: "flux-2-pro", displayName: "Flux 2 Pro", paid: true, group: "standard" },
-  { id: "flux-2-max", displayName: "Flux 2 Max", paid: true, group: "standard" },
-  { id: "gpt-image-2", displayName: "GPT Image 2", paid: true, group: "standard" },
-  { id: "gpt-image-1-5", displayName: "GPT Image 1.5", paid: true, group: "standard" },
-  { id: "hunyuan-image-3-0", displayName: "Hunyuan Image 3.0", privateModel: true, paid: true, group: "standard" },
-  { id: "imagineart-1-5-pro", displayName: "ImagineArt 1.5 Pro", paid: true, group: "standard" },
-  { id: "nano-banana-2", displayName: "Nano Banana 2", paid: true, group: "standard" },
-  { id: "nano-banana-pro", displayName: "Nano Banana Pro", paid: true, group: "standard" },
-  { id: "recraft-v4", displayName: "Recraft V4", paid: true, group: "standard" },
-  { id: "recraft-v4-pro", displayName: "Recraft V4 Pro", paid: true, group: "standard" },
-  { id: "wan-2-7", displayName: "Wan 2.7", paid: true, group: "standard" },
-  { id: "wan-2-7-pro", displayName: "Wan 2.7 Pro", paid: true, group: "standard" },
+  { id: "qwen-image", displayName: "Qwen Image", endpoint: "generate", privateModel: true, paid: true, price: "$0.01" },
+  { id: "qwen-image-2", displayName: "Qwen Image 2", endpoint: "generate", paid: true, price: "paid" },
+  { id: "qwen-image-2-pro", displayName: "Qwen Image 2 Pro", endpoint: "generate", paid: true, price: "paid" },
+  { id: "venice-sd35", displayName: "Venice SD 3.5", endpoint: "generate", privateModel: true, price: "free" },
+  { id: "grok-imagine-image-pro", displayName: "Grok Imagine Pro", endpoint: "generate", privateModel: true, paid: true, price: "paid" },
+  { id: "flux-2-pro", displayName: "Flux 2 Pro", endpoint: "generate", paid: true, price: "paid" },
+  { id: "flux-2-max", displayName: "Flux 2 Max", endpoint: "generate", paid: true, price: "paid" },
+  { id: "gpt-image-2", displayName: "GPT Image 2", endpoint: "generate", paid: true, price: "paid" },
+  { id: "gpt-image-1-5", displayName: "GPT Image 1.5", endpoint: "generate", paid: true, price: "paid" },
+  { id: "hunyuan-image-3-0", displayName: "Hunyuan Image 3.0", endpoint: "generate", privateModel: true, paid: true, price: "paid" },
+  { id: "imagineart-1-5-pro", displayName: "ImagineArt 1.5 Pro", endpoint: "generate", paid: true, price: "paid" },
+  { id: "nano-banana-2", displayName: "Nano Banana 2", endpoint: "generate", paid: true, price: "paid" },
+  { id: "nano-banana-pro", displayName: "Nano Banana Pro", endpoint: "generate", paid: true, price: "paid" },
+  { id: "recraft-v4", displayName: "Recraft V4", endpoint: "generate", paid: true, price: "paid" },
+  { id: "recraft-v4-pro", displayName: "Recraft V4 Pro", endpoint: "generate", paid: true, price: "paid" },
+  { id: "wan-2-7", displayName: "Wan 2.7", endpoint: "generate", paid: true, price: "paid" },
+  { id: "wan-2-7-pro", displayName: "Wan 2.7 Pro", endpoint: "generate", paid: true, price: "paid" },
+];
+
+/** Image-to-image models — /v1/image/edit. Reference image required. */
+export const VENICE_EDIT_MODELS: VeniceModelMeta[] = [
+  // Uncensored / cheap → recommend qwen-edit for character work.
+  { id: "qwen-edit", displayName: "Qwen Edit 2511", endpoint: "edit", uncensored: true, privateModel: true, paid: true, recommended: true, price: "$0.04" },
+  { id: "seedream-v4-edit", displayName: "Seedream V4 Edit", endpoint: "edit", uncensored: true, paid: true, price: "$0.05" },
+  { id: "seedream-v5-lite-edit", displayName: "Seedream V5 Lite Edit", endpoint: "edit", uncensored: true, paid: true, price: "$0.05" },
+
+  // Standard moderation
+  { id: "firered-image-edit", displayName: "FireRed Edit", endpoint: "edit", paid: true, price: "$0.04" },
+  { id: "grok-imagine-edit", displayName: "Grok Imagine Edit", endpoint: "edit", paid: true, price: "$0.03" },
+  { id: "qwen-image-2-edit", displayName: "Qwen Image 2 Edit", endpoint: "edit", paid: true, price: "$0.05" },
+  { id: "qwen-image-2-pro-edit", displayName: "Qwen Image 2 Pro Edit", endpoint: "edit", paid: true, price: "$0.10" },
+  { id: "wan-2-7-pro-edit", displayName: "Wan 2.7 Pro Edit", endpoint: "edit", paid: true, price: "$0.09" },
+  { id: "flux-2-max-edit", displayName: "Flux 2 Max Edit", endpoint: "edit", paid: true, price: "$0.19" },
+  { id: "gpt-image-2-edit", displayName: "GPT Image 2 Edit", endpoint: "edit", paid: true, price: "$0.36" },
+  { id: "gpt-image-1-5-edit", displayName: "GPT Image 1.5 Edit", endpoint: "edit", paid: true, price: "$0.36" },
+  { id: "nano-banana-2-edit", displayName: "Nano Banana 2 Edit", endpoint: "edit", paid: true, price: "$0.10" },
+  { id: "nano-banana-pro-edit", displayName: "Nano Banana Pro Edit", endpoint: "edit", paid: true, price: "$0.18" },
+];
+
+/** Combined list, useful for the curated FALLBACK_IMAGE_MODELS spread. */
+export const VENICE_IMAGE_MODELS: VeniceModelMeta[] = [
+  ...VENICE_EDIT_MODELS,
+  ...VENICE_GENERATE_MODELS,
 ];
 
 export const VENICE_MODEL_INDEX: Map<string, VeniceModelMeta> = new Map(
   VENICE_IMAGE_MODELS.map((m) => [m.id, m]),
 );
 
-/**
- * Map our internal aspect-ratio hints to OpenAI-style "WIDTHxHEIGHT" size
- * strings. The endpoint accepts the three sizes below across most models;
- * unknown ratios fall back to 1024x1024.
- */
 function aspectToSize(aspectRatio: string | undefined): string {
   switch (aspectRatio) {
     case "16:9":
@@ -81,10 +110,11 @@ export const venice: ImageProvider = {
   id: "venice",
   name: "Venice AI",
   description:
-    "24 image models — uncensored generation included. OpenAI-compatible /v1/images/generations endpoint, text-to-image only.",
+    "Two image systems: text-to-image (/images/generations, 24 models) and image-to-image edit (/image/edit, 13 models including the uncensored qwen-edit).",
   modelPatterns: VENICE_IMAGE_MODELS.map((m) => new RegExp(`^${m.id}$`, "i")),
   implemented: true,
-  // No Venice image model accepts a reference today.
+  // Provider-level default; per-model truth is in VENICE_MODEL_INDEX
+  // (every edit-endpoint model is reference-capable).
   supportsReferenceImage: false,
 
   async generateImage(
@@ -95,16 +125,64 @@ export const venice: ImageProvider = {
     if (!apiKey || !apiKey.trim()) {
       throw new Error("Venice API key not configured. Add it in Settings.");
     }
+    const meta = VENICE_MODEL_INDEX.get(model);
+    if (!meta) {
+      throw new Error(`Unknown Venice model "${model}".`);
+    }
 
-    const body: Record<string, unknown> = {
-      model,
+    if (meta.endpoint === "edit") {
+      // ── /v1/image/edit
+      const ref = options.referenceImages?.[0];
+      if (!ref) {
+        throw new Error(
+          `${meta.displayName} is an edit model — it requires a reference image. Upload a base image on the character or switch to a Generate model.`,
+        );
+      }
+      // Strip a data: URL prefix if present — Venice expects RAW base64.
+      const rawBase64 = ref.data.startsWith("data:")
+        ? ref.data.replace(/^data:[^;]+;base64,/, "")
+        : ref.data;
+      const mt = (ref.mimeType || "").toLowerCase();
+      if (mt && !/^image\/(jpe?g|png|webp|heif|heic|avif)$/.test(mt)) {
+        throw new Error(
+          `Reference image format ${mt} is not supported by Venice edit. Use JPEG, PNG, WEBP, HEIF, HEIC, or AVIF.`,
+        );
+      }
+      const body = {
+        model: meta.id,
+        prompt: options.prompt,
+        image: rawBase64,
+        safe_mode: options.safeMode === true,
+      };
+      const res = await fetch("https://api.venice.ai/api/v1/image/edit", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey.trim()}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Venice edit error ${res.status}: ${text.slice(0, 400) || "unknown"}`);
+      }
+      const data = (await res.json()) as { images?: string[] };
+      const first = data.images?.[0];
+      if (!first) throw new Error("Venice edit returned no image data.");
+      return {
+        imageDataUrl: first.startsWith("data:") ? first : `data:image/webp;base64,${first}`,
+        modelUsed: model,
+        provider: "venice",
+      };
+    }
+
+    // ── /v1/images/generations  (OpenAI-compatible)
+    const body = {
+      model: meta.id,
       prompt: options.prompt,
       size: aspectToSize(options.aspectRatio),
       response_format: "b64_json",
-      // Default to false (uncensored). Toggled by the user under Settings.
-      safe_mode: options.safeMode === true,
     };
-
     const res = await fetch("https://api.venice.ai/api/v1/images/generations", {
       method: "POST",
       headers: {
@@ -113,15 +191,13 @@ export const venice: ImageProvider = {
       },
       body: JSON.stringify(body),
     });
-
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`Venice API error ${res.status}: ${text.slice(0, 400) || "unknown"}`);
+      throw new Error(`Venice generate error ${res.status}: ${text.slice(0, 400) || "unknown"}`);
     }
     const data = (await res.json()) as {
       data?: Array<{ b64_json?: string; url?: string }>;
     };
-
     const first = data.data?.[0];
     if (first?.b64_json) {
       return {
@@ -131,8 +207,6 @@ export const venice: ImageProvider = {
       };
     }
     if (first?.url) {
-      // Inline remote URLs as data URLs so the rest of the app stores them
-      // identically to Gemini outputs.
       const imgRes = await fetch(first.url);
       if (!imgRes.ok) throw new Error(`Failed to fetch Venice image url: ${imgRes.status}`);
       const buf = await imgRes.arrayBuffer();
@@ -143,8 +217,7 @@ export const venice: ImageProvider = {
         provider: "venice",
       };
     }
-
-    throw new Error("Venice returned no image data in the response.");
+    throw new Error("Venice generate returned no image data.");
   },
 
   async testConnection(apiKey: string) {
@@ -161,16 +234,16 @@ export const venice: ImageProvider = {
   },
 };
 
-/** True when the model id is one of Venice's image-generation models. */
+/** Returns true when the model id is one of Venice's image models (either system). */
 export function isVeniceImageModel(modelId: string): boolean {
   return VENICE_MODEL_INDEX.has(modelId);
 }
 
 /**
- * Per-model reference-image capability. All Venice image models are
- * text-to-image today, so this is always false. Kept as a function so
- * the route doesn't have to learn about provider-internal metadata.
+ * True when the chosen Venice model uses the /image/edit endpoint (and
+ * therefore accepts a reference image). Used by the route to decide
+ * whether to load the character's base image into options.referenceImages.
  */
-export function veniceModelSupportsRef(_modelId: string): boolean {
-  return false;
+export function veniceModelSupportsRef(modelId: string): boolean {
+  return VENICE_MODEL_INDEX.get(modelId)?.endpoint === "edit";
 }

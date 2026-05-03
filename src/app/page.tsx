@@ -7,6 +7,7 @@ import TopBar from "./components/TopBar";
 import DatasetGrid from "./components/DatasetGrid";
 import GeneratePanel from "./components/GeneratePanel";
 import CharacterSheet from "./components/CharacterSheet";
+import RelationshipsPanel from "./components/RelationshipsPanel";
 import CreateCharacterModal from "./components/CreateCharacterModal";
 import ImageModal from "./components/ImageModal";
 import SettingsModal from "./components/SettingsModal";
@@ -288,6 +289,12 @@ function HomeContent() {
                   character={selectedCharacter}
                   onUpdate={handleUpdateCharacter}
                   onLightboxOpen={setLightboxSrc}
+                />
+              )}
+              {activeTab === "relationships" && (
+                <RelationshipsPanel
+                  character={selectedCharacter}
+                  allCharacters={characters}
                 />
               )}
             </>

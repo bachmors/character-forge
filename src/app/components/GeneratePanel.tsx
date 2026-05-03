@@ -68,8 +68,37 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
   const [generatedModelUsed, setGeneratedModelUsed] = useState<string>("");
   const [generatedTargetAge, setGeneratedTargetAge] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Structured error from /api/generate/gemini for the in-canvas error card.
+  const [errorDetails, setErrorDetails] = useState<{
+    title: string;
+    message: string;
+    category?: string;
+    canRetry: boolean;
+  } | null>(null);
   const [clothingStyle, setClothingStyle] = useState("default");
   const [customClothing, setCustomClothing] = useState("");
+  // Free-text "details" field that stacks ON TOP of any preset clothing
+  // (Improvement #2). Persisted on character.profile.clothing_details.
+  const [clothingDetails, setClothingDetails] = useState("");
+  // Hydrate clothing details from the character's profile when it changes.
+  useEffect(() => {
+    const saved = (character.profile as { clothing_details?: string } | undefined)
+      ?.clothing_details;
+    setClothingDetails(typeof saved === "string" ? saved : "");
+  }, [character._id, character.profile]);
+
+  const persistClothingDetails = async (value: string) => {
+    try {
+      const newProfile = { ...(character.profile || {}), clothing_details: value };
+      await fetch(`/api/characters/${character._id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: newProfile }),
+      });
+    } catch {
+      // ignore — non-critical
+    }
+  };
   const [agePresetId, setAgePresetId] = useState<string>("default");
   const [customAge, setCustomAge] = useState<string>("");
   // Per-generation emotional state override (Module 1). Empty string means
@@ -163,10 +192,19 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
   const categoryPoses = STANDARD_POSES.filter((p) => p.category === selectedCategory);
 
   const getClothingDescription = useCallback(() => {
-    if (clothingStyle === "default") return undefined;
-    if (clothingStyle === "custom") return customClothing || undefined;
-    return CLOTHING_DESCRIPTIONS[clothingStyle] || undefined;
-  }, [clothingStyle, customClothing]);
+    // Resolve the preset/custom selection first, then layer on the
+    // free-text "details" field if the user provided one.
+    let base: string | undefined;
+    if (clothingStyle === "default") base = undefined;
+    else if (clothingStyle === "custom") base = customClothing || undefined;
+    else base = CLOTHING_DESCRIPTIONS[clothingStyle] || undefined;
+
+    const details = clothingDetails.trim();
+    if (base && details) return `${base}, with these specific details: ${details}`;
+    if (base) return base;
+    if (details) return details;
+    return undefined;
+  }, [clothingStyle, customClothing, clothingDetails]);
 
   // Resolve the currently selected age into a number, or null for "as reference".
   const getTargetAge = useCallback((): number | null => {
@@ -233,7 +271,15 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Generation failed");
+        // Forward the structured payload (category, message) to the catch
+        // block so the UI can render an in-canvas error card.
+        const err = new Error(data.error || "Generation failed") as Error & {
+          category?: string;
+          status?: number;
+        };
+        err.category = data.category;
+        err.status = res.status;
+        throw err;
       }
       return { image_url: data.image_url, model_used: data.model_used };
     },
@@ -278,6 +324,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
 
     setGenerating(true);
     setError(null);
+    setErrorDetails(null);
     setGeneratedImage(null);
 
     try {
@@ -290,7 +337,27 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
         setGeneratedTargetAge(age);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error. Please try again.");
+      const message = err instanceof Error ? err.message : "Network error. Please try again.";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cat = (err as any)?.category as string | undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const status = (err as any)?.status as number | undefined;
+      const titleMap: Record<string, string> = {
+        safety: "Blocked by safety policies",
+        recitation: "Blocked to avoid copyrighted content",
+        empty: "No image returned",
+        rate: "Rate limit reached",
+        auth: "API key issue",
+        size: "Reference image too large",
+        network: "Network error",
+      };
+      setErrorDetails({
+        title: titleMap[cat || ""] || "Generation failed",
+        message,
+        category: cat,
+        // Auth and size errors won't fix themselves on retry; everything else can.
+        canRetry: cat !== "auth" && cat !== "size" && status !== 501,
+      });
       console.error(err);
     } finally {
       setGenerating(false);
@@ -1086,6 +1153,25 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
                 className="mt-2 w-full bg-bg border border-border rounded-lg px-3 py-1.5 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
               />
             )}
+
+            {/* Custom clothing details (Improvement #2) — stacks ON TOP of
+                whatever preset is selected. Persisted on character.profile. */}
+            <div className="mt-2">
+              <label className="block text-[11px] text-muted mb-1">
+                Style details (optional — stacks with preset)
+              </label>
+              <input
+                type="text"
+                value={clothingDetails}
+                onChange={(e) => setClothingDetails(e.target.value)}
+                onBlur={() => persistClothingDetails(clothingDetails)}
+                placeholder="e.g. Red leather jacket with gold buttons, black boots"
+                className="w-full bg-bg border border-border rounded-lg px-3 py-1.5 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
+              />
+              <p className="text-[10px] text-muted/60 mt-1">
+                Saved on the character — auto-fills next time you open this view.
+              </p>
+            </div>
           </div>
 
           {/* Age (collapsible — out of the way for users who don't need it) */}
@@ -1511,7 +1597,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
             </button>
           </div>
 
-          {error && (
+          {error && !errorDetails && (
             <div className="p-3 bg-danger/10 border border-danger/20 rounded-lg text-sm text-danger">
               {error}
             </div>
@@ -1521,10 +1607,57 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
         {/* Right: Result */}
         <div>
           <label className="block text-sm text-muted mb-2">Result</label>
-          <div className="aspect-square rounded-lg border border-border bg-bg overflow-hidden">
+          <div
+            className={`aspect-square rounded-lg border overflow-hidden ${
+              errorDetails && !generating
+                ? "border-danger/40 bg-danger/5"
+                : "border-border bg-bg"
+            }`}
+          >
             {generating ? (
               <div className="w-full h-full skeleton-loader flex items-center justify-center">
                 <span className="text-muted text-sm animate-pulse-glow">Generating...</span>
+              </div>
+            ) : errorDetails ? (
+              <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center gap-3">
+                <svg
+                  width="40"
+                  height="40"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  className="text-danger/80"
+                >
+                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <div className="space-y-1">
+                  <p className="text-sm text-danger font-medium">{errorDetails.title}</p>
+                  <p className="text-xs text-text/80 leading-snug max-w-xs">
+                    {errorDetails.message}
+                  </p>
+                  {errorDetails.category && (
+                    <p className="text-[10px] uppercase tracking-wide text-muted/60">
+                      {errorDetails.category}
+                    </p>
+                  )}
+                </div>
+                {errorDetails.canRetry && (
+                  <button
+                    onClick={handleGenerate}
+                    className="mt-2 px-4 py-1.5 rounded-lg bg-accent text-bg font-medium text-sm hover:bg-accent-hover transition-colors"
+                  >
+                    Try Again
+                  </button>
+                )}
+                <button
+                  onClick={() => setErrorDetails(null)}
+                  className="text-[11px] text-muted hover:text-text transition-colors"
+                >
+                  Dismiss
+                </button>
               </div>
             ) : generatedImage ? (
               <img

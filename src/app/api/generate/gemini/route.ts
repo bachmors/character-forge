@@ -178,16 +178,36 @@ export async function POST(req: NextRequest) {
     }
 
     if (!imageData) {
+      // Categorise the failure so the front-end can render a friendly card
+      // instead of the generic "did not generate an image" line.
+      const finishReason = String(candidates[0].finishReason || "").toUpperCase();
+      let category: "safety" | "recitation" | "empty" | "other" = "other";
+      let message = "The model returned no image.";
+      if (finishReason === "SAFETY" || finishReason === "PROHIBITED_CONTENT") {
+        category = "safety";
+        message =
+          "The model declined this generation due to its safety policies. Try adjusting your prompt, clothing style, or scene description.";
+      } else if (finishReason === "RECITATION") {
+        category = "recitation";
+        message =
+          "The model declined this generation because the prompt risked reproducing copyrighted content. Rephrase the request.";
+      } else if (finishReason === "STOP" || finishReason === "MAX_TOKENS") {
+        category = "empty";
+        message =
+          "The model finished without producing an image. Make the prompt more specific about what should appear in the image.";
+      } else if (textResponse) {
+        // Sometimes the model returns a refusal as text. Surface it so the
+        // user can read the actual reason.
+        message = textResponse.trim().slice(0, 400);
+      }
       return NextResponse.json(
         {
-          error: "Gemini did not generate an image",
-          debug: {
-            textResponse: textResponse || "empty",
-            partsCount: responseParts.length,
-            finishReason: candidates[0].finishReason,
-          },
+          error: message,
+          category,
+          finish_reason: finishReason || null,
+          text_response: textResponse || null,
         },
-        { status: 500 }
+        { status: 422 }, // 422 = unprocessable: client should adjust input.
       );
     }
 
@@ -203,9 +223,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     console.error("POST /api/generate/gemini error:", error);
-    return NextResponse.json(
-      { error: "Failed to generate image", details: String(error) },
-      { status: 500 }
-    );
+    // Map common upstream errors to specific categories the UI can theme.
+    const raw = error instanceof Error ? error.message : String(error);
+    const lower = raw.toLowerCase();
+    let category: "rate" | "auth" | "size" | "network" | "other" = "other";
+    let status = 500;
+    let message = "Generation failed. Please try again.";
+    if (/quota|rate.?limit|too many requests|resource_?exhausted/.test(lower)) {
+      category = "rate";
+      status = 429;
+      message = "Rate limit reached. Wait a moment and try again.";
+    } else if (/api[ _]?key|unauthorized|invalid.+credential|permission_?denied/.test(lower)) {
+      category = "auth";
+      status = 401;
+      message = "API key invalid or missing the right permissions. Check your settings.";
+    } else if (/payload too large|413|request entity too large/.test(lower)) {
+      category = "size";
+      status = 413;
+      message = "Reference image too large. Use a smaller image (under 4 MB).";
+    } else if (/fetch|network|timeout|enotfound|econnrefused/.test(lower)) {
+      category = "network";
+      message = "Network error reaching the model provider. Check your connection.";
+    }
+    return NextResponse.json({ error: message, category, raw }, { status });
   }
 }

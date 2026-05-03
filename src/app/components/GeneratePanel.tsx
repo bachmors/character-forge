@@ -6,6 +6,10 @@ import {
   buildPrompt, type CharacterTraits, type PoseDefinition,
 } from "@/lib/prompts";
 import { EMOTIONAL_STATES, type CharacterProfile } from "@/lib/profile";
+import CinematographyControls, {
+  DEFAULT_CINEMATOGRAPHY_STATE,
+  type CinematographyState,
+} from "./CinematographyControls";
 
 // 12 emotions offered for the Expression Sheet generator (Module 2).
 const SHEET_EXPRESSIONS = [
@@ -72,6 +76,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
   // "use the saved psychology profile's default state".
   const [emotionalOverride, setEmotionalOverride] = useState<string>("");
   const [emotionalOverrideCustom, setEmotionalOverrideCustom] = useState<string>("");
+  const [cinematography, setCinematography] = useState<CinematographyState>(DEFAULT_CINEMATOGRAPHY_STATE);
 
   // Batch generation state
   const [batchGenerating, setBatchGenerating] = useState(false);
@@ -154,6 +159,12 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
           emotionalStateOverride: emotionalOverride
             ? { id: emotionalOverride, custom: emotionalOverride === "custom" ? emotionalOverrideCustom : undefined }
             : null,
+          cinematography: {
+            cameraAngle: cinematography.cameraAngle,
+            lens: cinematography.lens,
+            lighting: cinematography.lighting,
+          },
+          artStyle: cinematography.artStyle,
         }),
       });
       const data = await res.json();
@@ -162,7 +173,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       }
       return { image_url: data.image_url, model_used: data.model_used };
     },
-    [character.base_image_url, character.profile, emotionalOverride, emotionalOverrideCustom],
+    [character.base_image_url, character.profile, emotionalOverride, emotionalOverrideCustom, cinematography],
   );
 
   // Compress and save an image
@@ -744,6 +755,9 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
               </p>
             </div>
           </details>
+
+          {/* Cinematography + art style (Modules 7 + 9) */}
+          <CinematographyControls value={cinematography} onChange={setCinematography} />
 
           {/* Category selector */}
           <div>

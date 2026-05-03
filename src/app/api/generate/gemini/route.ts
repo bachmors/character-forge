@@ -9,6 +9,11 @@ import {
   buildMoodboardInstruction,
   type CharacterProfile,
 } from "@/lib/profile";
+import {
+  buildCinematographyInstruction,
+  buildArtStyleInstruction,
+  type CinematographyChoice,
+} from "@/lib/cinematography";
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,6 +25,8 @@ export async function POST(req: NextRequest) {
       clothingDescription,
       characterProfile,
       emotionalStateOverride,
+      cinematography,
+      artStyle,
     }: {
       prompt: string;
       referenceImageUrl?: string;
@@ -27,6 +34,8 @@ export async function POST(req: NextRequest) {
       clothingDescription?: string | null;
       characterProfile?: CharacterProfile;
       emotionalStateOverride?: { id?: string; custom?: string } | null;
+      cinematography?: CinematographyChoice | null;
+      artStyle?: string | null;
     } = await req.json();
 
     if (!prompt) {
@@ -51,15 +60,20 @@ export async function POST(req: NextRequest) {
     );
     const backstoryInstruction = buildBackstoryInstruction(characterProfile?.backstory);
     const moodboardInstruction = buildMoodboardInstruction(characterProfile?.moodboard);
+    const cinematographyInstruction = buildCinematographyInstruction(cinematography);
+    const artStyleInstruction = buildArtStyleInstruction(artStyle);
 
-    // Order: clothing → age → psychology → background → visual style.
-    // All append at the end so they take precedence over earlier prompt content.
+    // Order: clothing → age → psychology → background → visual style →
+    //        cinematography → art style. Art style is last so its aesthetic
+    //        can override the earlier "photographic" instructions when set.
     let finalPrompt = prompt;
     if (clothingInstruction) finalPrompt = `${finalPrompt}\n\n${clothingInstruction.trim()}`;
     if (ageInstruction) finalPrompt = `${finalPrompt}\n\n${ageInstruction.trim()}`;
     if (psychInstruction) finalPrompt = `${finalPrompt}\n\n${psychInstruction.trim()}`;
     if (backstoryInstruction) finalPrompt = `${finalPrompt}\n\n${backstoryInstruction.trim()}`;
     if (moodboardInstruction) finalPrompt = `${finalPrompt}\n\n${moodboardInstruction.trim()}`;
+    if (cinematographyInstruction) finalPrompt = `${finalPrompt}\n\n${cinematographyInstruction.trim()}`;
+    if (artStyleInstruction) finalPrompt = `${finalPrompt}\n\n${artStyleInstruction.trim()}`;
 
     const session = await getSession();
     const apiKey = session.apiKeys?.googleAi || process.env.GOOGLE_AI_API_KEY;

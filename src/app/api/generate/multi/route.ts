@@ -3,6 +3,11 @@ import { getSession } from "@/lib/session";
 import { GoogleGenAI } from "@google/genai";
 import { requireUser } from "@/lib/auth";
 import { buildMultiScenePrompt, type ModeId } from "@/lib/scenes";
+import {
+  buildCinematographyInstruction,
+  buildArtStyleInstruction,
+  type CinematographyChoice,
+} from "@/lib/cinematography";
 
 interface IncomingCharacter {
   name: string;
@@ -33,6 +38,8 @@ export async function POST(req: NextRequest) {
       attitude,
       setting,
       customSetting,
+      cinematography,
+      artStyle,
     }: {
       mode: ModeId;
       characters: IncomingCharacter[];
@@ -40,6 +47,8 @@ export async function POST(req: NextRequest) {
       attitude: string;
       setting: string;
       customSetting?: string;
+      cinematography?: CinematographyChoice | null;
+      artStyle?: string | null;
     } = body || {};
 
     if (!Array.isArray(characters) || characters.length < 2) {
@@ -71,7 +80,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Build the user-text prompt referring to "reference image #N" for each character.
-    const promptText = buildMultiScenePrompt({
+    let promptText = buildMultiScenePrompt({
       mode: mode === "group" ? "group" : "duo",
       characters: characters.map((c) => ({
         name: c.name,
@@ -85,6 +94,10 @@ export async function POST(req: NextRequest) {
       setting,
       customSetting,
     });
+    const cinematographyInstruction = buildCinematographyInstruction(cinematography);
+    const artStyleInstruction = buildArtStyleInstruction(artStyle);
+    if (cinematographyInstruction) promptText = `${promptText}\n\n${cinematographyInstruction.trim()}`;
+    if (artStyleInstruction) promptText = `${promptText}\n\n${artStyleInstruction.trim()}`;
 
     // Resolve each character's reference image into a Gemini inlineData part,
     // preserving order so #N in the text matches the Nth image part.

@@ -14,6 +14,10 @@ import {
   CLOTHING_DESCRIPTIONS,
 } from "@/lib/prompts";
 import { compressImage } from "@/lib/imageUtils";
+import CinematographyControls, {
+  DEFAULT_CINEMATOGRAPHY_STATE,
+  type CinematographyState,
+} from "./CinematographyControls";
 
 interface CharacterStat {
   _id: string;
@@ -122,6 +126,7 @@ export default function MultiSceneBuilder({ mode, min, max, title, blurb }: Prop
   );
   const [setting, setSetting] = useState<string>("studio");
   const [customSetting, setCustomSetting] = useState<string>("");
+  const [cinematography, setCinematography] = useState<CinematographyState>(DEFAULT_CINEMATOGRAPHY_STATE);
 
   const [generating, setGenerating] = useState(false);
   const [generated, setGenerated] = useState<{
@@ -226,6 +231,12 @@ export default function MultiSceneBuilder({ mode, min, max, title, blurb }: Prop
           attitude,
           setting,
           customSetting,
+          cinematography: {
+            cameraAngle: cinematography.cameraAngle,
+            lens: cinematography.lens,
+            lighting: cinematography.lighting,
+          },
+          artStyle: cinematography.artStyle,
         }),
       });
       const data = await res.json();
@@ -568,6 +579,10 @@ export default function MultiSceneBuilder({ mode, min, max, title, blurb }: Prop
                   />
                 )}
               </div>
+            </section>
+
+            <section>
+              <CinematographyControls value={cinematography} onChange={setCinematography} />
             </section>
 
             {/* Generate */}

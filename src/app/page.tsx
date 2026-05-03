@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Sidebar from "./components/Sidebar";
 import TopBar from "./components/TopBar";
 import DatasetGrid from "./components/DatasetGrid";
@@ -33,6 +34,16 @@ interface CharacterImage {
 }
 
 export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeContent() {
+  const searchParams = useSearchParams();
+  const initialCharacterId = searchParams?.get("characterId") || null;
   const [characters, setCharacters] = useState<Character[]>([]);
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
   const [images, setImages] = useState<CharacterImage[]>([]);
@@ -46,6 +57,19 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const selectedCharacter = characters.find((c) => c._id === selectedCharacterId) || null;
+
+  // If the URL carries ?characterId=X (e.g. arriving from Gallery), pre-select
+  // that character once the list has loaded. Runs once when characters arrive.
+  useEffect(() => {
+    if (
+      initialCharacterId &&
+      !selectedCharacterId &&
+      characters.some((c) => c._id === initialCharacterId)
+    ) {
+      setSelectedCharacterId(initialCharacterId);
+      setActiveTab("dataset");
+    }
+  }, [initialCharacterId, selectedCharacterId, characters]);
 
   // Fetch characters
   const fetchCharacters = useCallback(async () => {

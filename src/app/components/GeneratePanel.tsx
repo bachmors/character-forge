@@ -5,6 +5,7 @@ import {
   STANDARD_POSES, CATEGORIES, CLOTHING_STYLES, CLOTHING_DESCRIPTIONS, AGE_PRESETS,
   buildPrompt, type CharacterTraits, type PoseDefinition,
 } from "@/lib/prompts";
+import { EMOTIONAL_STATES, type CharacterProfile } from "@/lib/profile";
 import { compressImage } from "@/lib/imageUtils";
 
 interface Character {
@@ -13,6 +14,7 @@ interface Character {
   description: string;
   base_image_url: string;
   traits: Record<string, string>;
+  profile?: CharacterProfile;
 }
 
 interface CharacterImage {
@@ -50,6 +52,10 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
   const [customClothing, setCustomClothing] = useState("");
   const [agePresetId, setAgePresetId] = useState<string>("default");
   const [customAge, setCustomAge] = useState<string>("");
+  // Per-generation emotional state override (Module 1). Empty string means
+  // "use the saved psychology profile's default state".
+  const [emotionalOverride, setEmotionalOverride] = useState<string>("");
+  const [emotionalOverrideCustom, setEmotionalOverrideCustom] = useState<string>("");
 
   // Batch generation state
   const [batchGenerating, setBatchGenerating] = useState(false);
@@ -113,6 +119,10 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
           referenceImageUrl: character.base_image_url || undefined,
           targetAge: age,
           clothingDescription: clothing,
+          characterProfile: character.profile || undefined,
+          emotionalStateOverride: emotionalOverride
+            ? { id: emotionalOverride, custom: emotionalOverride === "custom" ? emotionalOverrideCustom : undefined }
+            : null,
         }),
       });
       const data = await res.json();
@@ -121,7 +131,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       }
       return { image_url: data.image_url, model_used: data.model_used };
     },
-    [character.base_image_url],
+    [character.base_image_url, character.profile, emotionalOverride, emotionalOverrideCustom],
   );
 
   // Compress and save an image
@@ -418,6 +428,79 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
               <p className="text-xs text-muted/60">
                 When set, the character will be aged/de-aged to this target while
                 keeping their core facial features and identity.
+              </p>
+            </div>
+          </details>
+
+          {/* Per-generation emotional state override (Module 1) */}
+          <details className="border border-border rounded-lg group">
+            <summary className="px-3 py-2 cursor-pointer text-sm text-muted hover:text-text transition-colors flex items-center justify-between list-none">
+              <span>
+                Mood / Emotional state{" "}
+                <span className="text-xs text-muted/60">
+                  ({emotionalOverride
+                    ? emotionalOverride === "custom"
+                      ? emotionalOverrideCustom || "custom"
+                      : EMOTIONAL_STATES.find((e) => e.id === emotionalOverride)?.label || "—"
+                    : "use profile default"})
+                </span>
+              </span>
+              <span className="text-muted/60 transition-transform group-open:rotate-90">›</span>
+            </summary>
+            <div className="px-3 pb-3 pt-1 space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmotionalOverride("");
+                    setEmotionalOverrideCustom("");
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs transition-colors border ${
+                    !emotionalOverride
+                      ? "bg-accent/15 text-accent border-accent/30"
+                      : "text-muted border-border hover:border-border-strong hover:text-text"
+                  }`}
+                >
+                  Use profile default
+                </button>
+                {EMOTIONAL_STATES.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setEmotionalOverride(s.id)}
+                    className={`px-3 py-1 rounded-lg text-xs transition-colors border ${
+                      emotionalOverride === s.id
+                        ? "bg-accent/15 text-accent border-accent/30"
+                        : "text-muted border-border hover:border-border-strong hover:text-text"
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setEmotionalOverride("custom")}
+                  className={`px-3 py-1 rounded-lg text-xs transition-colors border ${
+                    emotionalOverride === "custom"
+                      ? "bg-accent/15 text-accent border-accent/30"
+                      : "text-muted border-border hover:border-border-strong hover:text-text"
+                  }`}
+                >
+                  Custom…
+                </button>
+              </div>
+              {emotionalOverride === "custom" && (
+                <input
+                  type="text"
+                  value={emotionalOverrideCustom}
+                  onChange={(e) => setEmotionalOverrideCustom(e.target.value)}
+                  placeholder="Describe the mood…"
+                  className="w-full bg-bg border border-border rounded-lg px-3 py-1.5 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
+                />
+              )}
+              <p className="text-xs text-muted/60">
+                One-off override for this generation. The character&apos;s saved psychology
+                profile (temperament, motivation, fear, body language) still applies.
               </p>
             </div>
           </details>

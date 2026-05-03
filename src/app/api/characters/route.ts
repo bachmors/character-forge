@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
     const body = await req.json();
-    const { name, description, base_image_url, traits } = body;
+    const { name, description, base_image_url, traits, profile } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
         expression_default: "neutral",
         clothing_base: "",
       },
+      profile: profile || {},
       created_at: now,
       updated_at: now,
     };

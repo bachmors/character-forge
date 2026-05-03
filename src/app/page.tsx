@@ -8,6 +8,9 @@ import DatasetGrid from "./components/DatasetGrid";
 import GeneratePanel from "./components/GeneratePanel";
 import CharacterSheet from "./components/CharacterSheet";
 import RelationshipsPanel from "./components/RelationshipsPanel";
+import PsychologyPanel from "./components/PsychologyPanel";
+import StoryPanel from "./components/StoryPanel";
+import type { CharacterProfile } from "@/lib/profile";
 import CreateCharacterModal from "./components/CreateCharacterModal";
 import ImageModal from "./components/ImageModal";
 import SettingsModal from "./components/SettingsModal";
@@ -19,6 +22,7 @@ interface Character {
   description: string;
   base_image_url: string;
   traits: Record<string, string>;
+  profile?: CharacterProfile;
 }
 
 interface CharacterImage {
@@ -289,6 +293,18 @@ function HomeContent() {
                   character={selectedCharacter}
                   onUpdate={handleUpdateCharacter}
                   onLightboxOpen={setLightboxSrc}
+                />
+              )}
+              {activeTab === "psychology" && (
+                <PsychologyPanel
+                  character={selectedCharacter}
+                  onUpdate={handleUpdateCharacter}
+                />
+              )}
+              {activeTab === "story" && (
+                <StoryPanel
+                  character={selectedCharacter}
+                  onUpdate={handleUpdateCharacter}
                 />
               )}
               {activeTab === "relationships" && (

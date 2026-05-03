@@ -15,7 +15,9 @@ interface TopBarProps {
 const TABS = [
   { id: "dataset", label: "Dataset" },
   { id: "generate", label: "Generate" },
-  { id: "sheet", label: "Character Sheet" },
+  { id: "sheet", label: "Sheet" },
+  { id: "psychology", label: "Psychology" },
+  { id: "story", label: "Story" },
   { id: "relationships", label: "Relationships" },
 ];
 

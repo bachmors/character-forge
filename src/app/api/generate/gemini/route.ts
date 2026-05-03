@@ -3,11 +3,31 @@ import { getSession } from "@/lib/session";
 import { GoogleGenAI } from "@google/genai";
 import { requireUser } from "@/lib/auth";
 import { buildAgeInstruction, buildClothingInstruction } from "@/lib/prompts";
+import {
+  buildPsychologyInstruction,
+  buildBackstoryInstruction,
+  buildMoodboardInstruction,
+  type CharacterProfile,
+} from "@/lib/profile";
 
 export async function POST(req: NextRequest) {
   try {
     await requireUser();
-    const { prompt, referenceImageUrl, targetAge, clothingDescription } = await req.json();
+    const {
+      prompt,
+      referenceImageUrl,
+      targetAge,
+      clothingDescription,
+      characterProfile,
+      emotionalStateOverride,
+    }: {
+      prompt: string;
+      referenceImageUrl?: string;
+      targetAge?: number | string | null;
+      clothingDescription?: string | null;
+      characterProfile?: CharacterProfile;
+      emotionalStateOverride?: { id?: string; custom?: string } | null;
+    } = await req.json();
 
     if (!prompt) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -25,11 +45,21 @@ export async function POST(req: NextRequest) {
     const clothingInstruction = buildClothingInstruction(
       typeof clothingDescription === "string" ? clothingDescription : null,
     );
-    // Append clothing first (most likely to be overridden by the reference),
-    // then age, so both instructions land at the end of the user message.
+    const psychInstruction = buildPsychologyInstruction(
+      characterProfile?.psychology,
+      emotionalStateOverride,
+    );
+    const backstoryInstruction = buildBackstoryInstruction(characterProfile?.backstory);
+    const moodboardInstruction = buildMoodboardInstruction(characterProfile?.moodboard);
+
+    // Order: clothing → age → psychology → background → visual style.
+    // All append at the end so they take precedence over earlier prompt content.
     let finalPrompt = prompt;
     if (clothingInstruction) finalPrompt = `${finalPrompt}\n\n${clothingInstruction.trim()}`;
     if (ageInstruction) finalPrompt = `${finalPrompt}\n\n${ageInstruction.trim()}`;
+    if (psychInstruction) finalPrompt = `${finalPrompt}\n\n${psychInstruction.trim()}`;
+    if (backstoryInstruction) finalPrompt = `${finalPrompt}\n\n${backstoryInstruction.trim()}`;
+    if (moodboardInstruction) finalPrompt = `${finalPrompt}\n\n${moodboardInstruction.trim()}`;
 
     const session = await getSession();
     const apiKey = session.apiKeys?.googleAi || process.env.GOOGLE_AI_API_KEY;

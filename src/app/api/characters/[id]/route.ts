@@ -49,6 +49,7 @@ export async function PUT(
     if (body.description !== undefined) updateData.description = body.description;
     if (body.base_image_url !== undefined) updateData.base_image_url = body.base_image_url;
     if (body.traits !== undefined) updateData.traits = body.traits;
+    if (body.profile !== undefined) updateData.profile = body.profile;
 
     const result = await db
       .collection("characters")

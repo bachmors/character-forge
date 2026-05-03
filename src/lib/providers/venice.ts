@@ -141,29 +141,51 @@ export const venice: ImageProvider = {
       Array.isArray(options.referenceImages) &&
       options.referenceImages.length > 0;
 
-    const sizingPayload = buildSizingPayload(meta, options.aspectRatio);
     const safeMode = options.safeMode === true;
 
-    const url = useEdit
-      ? "https://api.venice.ai/api/v1/image/edit"
-      : "https://api.venice.ai/api/v1/image/generate";
+    // /image/edit and /image/generate are two DIFFERENT APIs with
+    // different schemas. The edit endpoint rejects sizing / format /
+    // variants — those are generate-only.
+    let url: string;
+    let body: Record<string, unknown>;
 
-    // For the edit endpoint, the reference image is provided as a data URL
-    // in the `image` field (or array of `images`). Both shapes are accepted
-    // by Venice in our testing; we send a single data URL string for clarity.
-    const refImage = useEdit ? options.referenceImages![0] : null;
-    const body: Record<string, unknown> = {
-      model: meta.id,
-      prompt: options.prompt,
-      ...sizingPayload,
-      steps: 30,
-      safe_mode: safeMode,
-      format: "webp",
-      variants: 1,
-      hide_watermark: false,
-    };
-    if (refImage) {
-      body.image = `data:${refImage.mimeType};base64,${refImage.data}`;
+    if (useEdit) {
+      const refImage = options.referenceImages![0];
+      // The edit endpoint expects RAW base64 (no "data:image/...;base64,"
+      // prefix). Our internal ReferenceImage already stores the raw base64
+      // in `data`, but be defensive in case a caller passes a data URL.
+      const rawBase64 = refImage.data.startsWith("data:")
+        ? refImage.data.replace(/^data:[^;]+;base64,/, "")
+        : refImage.data;
+      // Venice accepts jpeg, png, webp, heif, heic, avif. compressImage()
+      // produces JPEG so this is fine for app-generated references; we
+      // only catch the most likely incompatible cases here.
+      const mt = (refImage.mimeType || "").toLowerCase();
+      if (mt && !/^image\/(jpe?g|png|webp|heif|heic|avif)$/.test(mt)) {
+        throw new Error(
+          `Reference image format ${mt} is not supported by Venice edit. Use JPEG, PNG, WEBP, HEIF, HEIC, or AVIF.`,
+        );
+      }
+      url = "https://api.venice.ai/api/v1/image/edit";
+      body = {
+        model: meta.id,
+        prompt: options.prompt,
+        image: rawBase64,
+        safe_mode: safeMode,
+      };
+    } else {
+      const sizingPayload = buildSizingPayload(meta, options.aspectRatio);
+      url = "https://api.venice.ai/api/v1/image/generate";
+      body = {
+        model: meta.id,
+        prompt: options.prompt,
+        ...sizingPayload,
+        steps: 30,
+        safe_mode: safeMode,
+        format: "webp",
+        variants: 1,
+        hide_watermark: false,
+      };
     }
 
     const res = await fetch(url, {

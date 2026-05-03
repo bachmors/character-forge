@@ -6,6 +6,22 @@ import {
   buildPrompt, type CharacterTraits, type PoseDefinition,
 } from "@/lib/prompts";
 import { EMOTIONAL_STATES, type CharacterProfile } from "@/lib/profile";
+
+// 12 emotions offered for the Expression Sheet generator (Module 2).
+const SHEET_EXPRESSIONS = [
+  { id: "joy", label: "Joy / Laughter" },
+  { id: "sadness", label: "Sadness / Tears" },
+  { id: "anger", label: "Anger / Rage" },
+  { id: "fear", label: "Fear / Terror" },
+  { id: "surprise", label: "Surprise / Shock" },
+  { id: "disgust", label: "Disgust / Revulsion" },
+  { id: "contempt", label: "Contempt / Disdain" },
+  { id: "love", label: "Love / Tenderness" },
+  { id: "guilt", label: "Guilt / Shame" },
+  { id: "pride", label: "Pride / Triumph" },
+  { id: "boredom", label: "Boredom / Apathy" },
+  { id: "curiosity", label: "Curiosity / Wonder" },
+];
 import { compressImage } from "@/lib/imageUtils";
 
 interface Character {
@@ -61,6 +77,21 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
   const [batchGenerating, setBatchGenerating] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentPose: "" });
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
+
+  // Expression Sheet (Module 2) state
+  const [showSheetPicker, setShowSheetPicker] = useState(false);
+  const [sheetIds, setSheetIds] = useState<string[]>([
+    "joy", "sadness", "anger", "fear", "surprise", "love",
+  ]);
+  const [sheetCount, setSheetCount] = useState<6 | 9>(6);
+  const [sheetGenerating, setSheetGenerating] = useState(false);
+  const [sheetResult, setSheetResult] = useState<{
+    image_url: string;
+    prompt_used: string;
+    expression_ids: string[];
+  } | null>(null);
+  const [sheetError, setSheetError] = useState<string | null>(null);
+  const [sheetSaving, setSheetSaving] = useState(false);
 
   const categoryPoses = STANDARD_POSES.filter((p) => p.category === selectedCategory);
 
@@ -255,20 +286,109 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
     setBatchGenerating(false);
   };
 
+  // ── Expression Sheet (Module 2) ──────────────────────────────────────
+  const handleGenerateExpressionSheet = async () => {
+    setSheetGenerating(true);
+    setSheetError(null);
+    setSheetResult(null);
+    try {
+      // Slice/pad to the target count.
+      const ids = sheetIds.slice(0, sheetCount);
+      if (ids.length !== sheetCount) {
+        setSheetError(`Pick exactly ${sheetCount} expressions`);
+        setSheetGenerating(false);
+        return;
+      }
+      const traits = character.traits || {};
+      const traitsSummary = [traits.hair, traits.skin, traits.accessories]
+        .filter((v) => v && String(v).trim())
+        .join(", ");
+      const res = await fetch("/api/generate/expression-sheet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          character: {
+            name: character.name,
+            description: character.description,
+            traits_summary: traitsSummary || undefined,
+            reference_image_url: character.base_image_url || undefined,
+          },
+          expressionIds: ids,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSheetError(data.error || "Generation failed");
+        return;
+      }
+      setSheetResult(data);
+    } catch (err) {
+      setSheetError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setSheetGenerating(false);
+    }
+  };
+
+  const handleSaveExpressionSheet = async () => {
+    if (!sheetResult) return;
+    setSheetSaving(true);
+    try {
+      const compressed = await compressImage(sheetResult.image_url);
+      await fetch("/api/images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          character_id: character._id,
+          category: "expression_sheet",
+          subcategory: `${sheetCount}_expressions`,
+          image_url: compressed,
+          prompt_used: sheetResult.prompt_used,
+          model_used: "gemini-3.1-flash-image-preview",
+        }),
+      });
+      onImageGenerated();
+      setSheetResult(null);
+      setShowSheetPicker(false);
+    } catch (err) {
+      setSheetError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSheetSaving(false);
+    }
+  };
+
+  const toggleSheetExpression = (id: string) => {
+    setSheetIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= sheetCount) return prev; // hard cap at current count
+      return [...prev, id];
+    });
+  };
+  // ─────────────────────────────────────────────────────────────────────
+
   const getPoseImageCount = (pose: PoseDefinition) =>
     images.filter((img) => img.category === pose.category && img.subcategory === pose.subcategory).length;
 
   return (
     <div className="p-4 md:p-6 animate-fade-in">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <h3 className="font-serif text-accent text-lg font-semibold">Generate Image</h3>
-        <button
-          onClick={handleGenerateAll}
-          disabled={batchGenerating || generating}
-          className="px-4 py-1.5 rounded-lg bg-accent/15 text-accent border border-accent/30 text-sm font-medium hover:bg-accent/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {batchGenerating ? "Generating..." : "Generate All Poses"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowSheetPicker((v) => !v)}
+            disabled={batchGenerating || generating || sheetGenerating}
+            className="px-3 py-1.5 rounded-lg border border-accent/30 text-accent text-sm hover:bg-accent/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Generate an expression sheet (6–9 emotions in one image)"
+          >
+            Expression Sheet
+          </button>
+          <button
+            onClick={handleGenerateAll}
+            disabled={batchGenerating || generating || sheetGenerating}
+            className="px-4 py-1.5 rounded-lg bg-accent/15 text-accent border border-accent/30 text-sm font-medium hover:bg-accent/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {batchGenerating ? "Generating..." : "Generate All Poses"}
+          </button>
+        </div>
       </div>
 
       {/* Batch generation progress */}
@@ -295,6 +415,126 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
           {batchErrors.length > 0 && (
             <div className="mt-2 text-xs text-danger">
               {batchErrors.length} error(s): {batchErrors[batchErrors.length - 1]}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Expression Sheet picker (Module 2) */}
+      {showSheetPicker && (
+        <div className="mb-6 p-4 bg-surface border border-accent/30 rounded-lg space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h4 className="text-sm text-accent font-medium">Expression Sheet</h4>
+              <p className="text-[11px] text-muted/80">
+                Same character × {sheetCount} emotions in one image. Pick exactly{" "}
+                {sheetCount} from the list below.
+              </p>
+            </div>
+            <div className="flex items-center gap-1">
+              {[6, 9].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => {
+                    setSheetCount(n as 6 | 9);
+                    setSheetIds((prev) => prev.slice(0, n));
+                  }}
+                  className={`px-2.5 py-1 rounded text-xs border transition-colors ${
+                    sheetCount === n
+                      ? "bg-accent/15 text-accent border-accent/30"
+                      : "border-border text-muted hover:text-text hover:border-border-strong"
+                  }`}
+                >
+                  {n === 6 ? "2×3 (6)" : "3×3 (9)"}
+                </button>
+              ))}
+              <button
+                onClick={() => setShowSheetPicker(false)}
+                className="ml-2 text-muted hover:text-text text-xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {SHEET_EXPRESSIONS.map((e) => {
+              const picked = sheetIds.includes(e.id);
+              const idx = sheetIds.indexOf(e.id);
+              const full = !picked && sheetIds.length >= sheetCount;
+              return (
+                <button
+                  key={e.id}
+                  onClick={() => toggleSheetExpression(e.id)}
+                  disabled={full}
+                  className={`px-2.5 py-1 rounded-lg text-xs border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    picked
+                      ? "bg-accent/15 text-accent border-accent/30"
+                      : "border-border text-muted hover:text-text hover:border-border-strong"
+                  }`}
+                >
+                  {picked && <span className="mr-1 text-accent">#{idx + 1}</span>}
+                  {e.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleGenerateExpressionSheet}
+              disabled={
+                sheetGenerating ||
+                sheetIds.length !== sheetCount ||
+                generating ||
+                batchGenerating
+              }
+              className="px-4 py-2 rounded-lg bg-accent text-bg text-sm font-medium hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {sheetGenerating ? "Generating sheet…" : `Generate ${sheetCount}-emotion sheet`}
+            </button>
+            <span className="text-xs text-muted">
+              {sheetIds.length}/{sheetCount} selected
+            </span>
+          </div>
+
+          {sheetError && (
+            <div className="p-2 bg-danger/10 border border-danger/20 rounded text-xs text-danger">
+              {sheetError}
+            </div>
+          )}
+
+          {sheetResult && (
+            <div className="border border-border rounded-lg p-3 bg-bg/40">
+              <div className="rounded overflow-hidden bg-bg flex items-center justify-center">
+                <img
+                  src={sheetResult.image_url}
+                  alt="Expression sheet"
+                  className="max-h-[60vh] w-auto object-contain"
+                />
+              </div>
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={handleSaveExpressionSheet}
+                  disabled={sheetSaving}
+                  className="px-4 py-1.5 rounded-lg bg-success/15 text-success border border-success/30 text-sm font-medium hover:bg-success/25 transition-colors disabled:opacity-50"
+                >
+                  {sheetSaving ? "Saving…" : "Save to library"}
+                </button>
+                <button
+                  onClick={handleGenerateExpressionSheet}
+                  disabled={sheetGenerating || sheetSaving}
+                  className="px-4 py-1.5 rounded-lg border border-border text-muted hover:text-text hover:border-border-strong text-sm transition-colors"
+                >
+                  Regenerate
+                </button>
+                <button
+                  onClick={() => setSheetResult(null)}
+                  className="text-muted hover:text-text text-xs"
+                >
+                  Discard
+                </button>
+              </div>
             </div>
           )}
         </div>

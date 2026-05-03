@@ -83,6 +83,19 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentPose: "" });
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
 
+  // Turnaround Sheet (Module 6) state
+  const [showTurnPicker, setShowTurnPicker] = useState(false);
+  const [turnLayout, setTurnLayout] = useState<"simple" | "standard" | "full">("standard");
+  const [turnGenerating, setTurnGenerating] = useState(false);
+  const [turnSaving, setTurnSaving] = useState(false);
+  const [turnError, setTurnError] = useState<string | null>(null);
+  const [turnResult, setTurnResult] = useState<{
+    image_url: string;
+    prompt_used: string;
+    layout: string;
+    view_count: number;
+  } | null>(null);
+
   // Expression Sheet (Module 2) state
   const [showSheetPicker, setShowSheetPicker] = useState(false);
   const [sheetIds, setSheetIds] = useState<string[]>([
@@ -297,6 +310,74 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
     setBatchGenerating(false);
   };
 
+  // ── Turnaround Sheet (Module 6) ──────────────────────────────────────
+  const handleGenerateTurnaround = async () => {
+    setTurnGenerating(true);
+    setTurnError(null);
+    setTurnResult(null);
+    try {
+      const traits = character.traits || {};
+      const traitsSummary = [traits.hair, traits.skin, traits.accessories]
+        .filter((v) => v && String(v).trim())
+        .join(", ");
+      const clothing = getClothingDescription() ?? null;
+      const age = getTargetAge();
+      const res = await fetch("/api/generate/turnaround", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          layout: turnLayout,
+          character: {
+            name: character.name,
+            description: character.description,
+            traits_summary: traitsSummary || undefined,
+            reference_image_url: character.base_image_url || undefined,
+            clothing,
+            age,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTurnError(data.error || "Generation failed");
+        return;
+      }
+      setTurnResult(data);
+    } catch (err) {
+      setTurnError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setTurnGenerating(false);
+    }
+  };
+
+  const handleSaveTurnaround = async () => {
+    if (!turnResult) return;
+    setTurnSaving(true);
+    try {
+      const compressed = await compressImage(turnResult.image_url);
+      await fetch("/api/images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          character_id: character._id,
+          category: "turnaround",
+          subcategory: `${turnResult.view_count}_view`,
+          image_url: compressed,
+          prompt_used: turnResult.prompt_used,
+          model_used: "gemini-3.1-flash-image-preview",
+        }),
+      });
+      onImageGenerated();
+      setTurnResult(null);
+      setShowTurnPicker(false);
+    } catch (err) {
+      setTurnError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setTurnSaving(false);
+    }
+  };
+  // ─────────────────────────────────────────────────────────────────────
+
   // ── Expression Sheet (Module 2) ──────────────────────────────────────
   const handleGenerateExpressionSheet = async () => {
     setSheetGenerating(true);
@@ -385,8 +466,16 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
         <h3 className="font-serif text-accent text-lg font-semibold">Generate Image</h3>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setShowTurnPicker((v) => !v)}
+            disabled={batchGenerating || generating || sheetGenerating || turnGenerating}
+            className="px-3 py-1.5 rounded-lg border border-accent/30 text-accent text-sm hover:bg-accent/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Generate a turnaround sheet (multiple angles in one image)"
+          >
+            Turnaround
+          </button>
+          <button
             onClick={() => setShowSheetPicker((v) => !v)}
-            disabled={batchGenerating || generating || sheetGenerating}
+            disabled={batchGenerating || generating || sheetGenerating || turnGenerating}
             className="px-3 py-1.5 rounded-lg border border-accent/30 text-accent text-sm hover:bg-accent/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title="Generate an expression sheet (6–9 emotions in one image)"
           >
@@ -426,6 +515,99 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
           {batchErrors.length > 0 && (
             <div className="mt-2 text-xs text-danger">
               {batchErrors.length} error(s): {batchErrors[batchErrors.length - 1]}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Turnaround picker (Module 6) */}
+      {showTurnPicker && (
+        <div className="mb-6 p-4 bg-surface border border-accent/30 rounded-lg space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h4 className="text-sm text-accent font-medium">Turnaround sheet</h4>
+              <p className="text-[11px] text-muted/80">
+                Same character × multiple angles in one horizontal strip. Uses the current
+                clothing &amp; age selections from above.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowTurnPicker(false)}
+              className="text-muted hover:text-text text-xs"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                { id: "simple", label: "Simple 3-view", desc: "Front · Side · Back" },
+                { id: "standard", label: "Standard 5-view", desc: "Front · 3⁄4 R · R · 3⁄4 Back · Back" },
+                { id: "full", label: "Full 8-view", desc: "Every 45° around" },
+              ] as Array<{ id: "simple" | "standard" | "full"; label: string; desc: string }>
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setTurnLayout(opt.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs border text-left transition-colors ${
+                  turnLayout === opt.id
+                    ? "bg-accent/15 text-accent border-accent/30"
+                    : "border-border text-muted hover:text-text hover:border-border-strong"
+                }`}
+                title={opt.desc}
+              >
+                <div>{opt.label}</div>
+                <div className="text-[10px] text-muted/70">{opt.desc}</div>
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={handleGenerateTurnaround}
+            disabled={turnGenerating || generating || batchGenerating || sheetGenerating}
+            className="px-4 py-2 rounded-lg bg-accent text-bg text-sm font-medium hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {turnGenerating ? "Generating turnaround…" : `Generate ${turnLayout} turnaround`}
+          </button>
+
+          {turnError && (
+            <div className="p-2 bg-danger/10 border border-danger/20 rounded text-xs text-danger">
+              {turnError}
+            </div>
+          )}
+
+          {turnResult && (
+            <div className="border border-border rounded-lg p-3 bg-bg/40">
+              <div className="rounded overflow-hidden bg-bg flex items-center justify-center">
+                <img
+                  src={turnResult.image_url}
+                  alt="Turnaround sheet"
+                  className="max-h-[60vh] w-auto object-contain"
+                />
+              </div>
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={handleSaveTurnaround}
+                  disabled={turnSaving}
+                  className="px-4 py-1.5 rounded-lg bg-success/15 text-success border border-success/30 text-sm font-medium hover:bg-success/25 transition-colors disabled:opacity-50"
+                >
+                  {turnSaving ? "Saving…" : "Save to library"}
+                </button>
+                <button
+                  onClick={handleGenerateTurnaround}
+                  disabled={turnGenerating || turnSaving}
+                  className="px-4 py-1.5 rounded-lg border border-border text-muted hover:text-text hover:border-border-strong text-sm transition-colors"
+                >
+                  Regenerate
+                </button>
+                <button
+                  onClick={() => setTurnResult(null)}
+                  className="text-muted hover:text-text text-xs"
+                >
+                  Discard
+                </button>
+              </div>
             </div>
           )}
         </div>

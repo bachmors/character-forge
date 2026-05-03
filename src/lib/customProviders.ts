@@ -34,6 +34,8 @@ export interface CustomProviderDoc {
   imageEndpoint: string;
   authType: CustomAuthType;
   authHeaderName: string | null;
+  /** Whether this provider's image generation accepts a reference image. */
+  supportsReferenceImage?: boolean;
   models: CustomModel[];
   created_at: Date;
   updated_at: Date;

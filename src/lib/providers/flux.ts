@@ -18,6 +18,8 @@ export const flux: ImageProvider = {
   description: "FLUX 1.1 Pro, FLUX Kontext. Photorealistic detail, strong identity preservation.",
   modelPatterns: [/^flux/i, /^bfl/i],
   implemented: false,
+  // FLUX Kontext supports init_image — flip this to true when that path is wired.
+  supportsReferenceImage: false,
 
   async generateImage() {
     throw new Error("FLUX provider not yet implemented. See providers/flux.ts for spec.");

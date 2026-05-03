@@ -16,6 +16,9 @@ export const replicate: ImageProvider = {
   description: "Replicate hosts many community models — SDXL, Flux, Kandinsky, etc.",
   modelPatterns: [/^replicate\//i, /^r8\b/i],
   implemented: false,
+  // Per-model — many Replicate models accept image inputs. Defaulting to
+  // false until the actual generation path is wired model-by-model.
+  supportsReferenceImage: false,
 
   async generateImage() {
     throw new Error("Replicate provider not yet implemented. See providers/replicate.ts for spec.");

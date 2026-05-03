@@ -15,6 +15,7 @@ export const ideogram: ImageProvider = {
   description: "Ideogram v2 / v3. Best-in-class text rendering inside images.",
   modelPatterns: [/^ideogram/i],
   implemented: false,
+  supportsReferenceImage: false,
 
   async generateImage() {
     throw new Error("Ideogram provider not yet implemented. See providers/ideogram.ts for spec.");

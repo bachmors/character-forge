@@ -120,9 +120,44 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       provider_implemented: boolean;
       is_custom?: boolean;
       uncensored?: boolean;
+      supports_reference_image?: boolean;
     }>
   >([]);
   const [selectedModel, setSelectedModel] = useState<string>("gemini-3.1-flash-image-preview");
+
+  // Compose a CHARACTER APPEARANCE description from the loaded character.
+  // Used as `appearanceFallback` for text-only models — server-side the
+  // route appends this to the prompt only when the chosen provider does
+  // NOT support reference images.
+  const appearanceFallback = (() => {
+    const parts: string[] = [];
+    if (character.description?.trim()) parts.push(character.description.trim());
+    const t = character.traits || {};
+    const traitOrder = [
+      ["hair", "hair"],
+      ["skin", "skin"],
+      ["accessories", "wearing"],
+      ["clothing_base", "in"],
+      ["expression_default", "default expression"],
+    ] as const;
+    for (const [key, label] of traitOrder) {
+      const v = t[key];
+      if (v && String(v).trim()) parts.push(`${label}: ${String(v).trim()}`);
+    }
+    // Custom traits (anything outside the standard set).
+    const standard = new Set<string>(traitOrder.map(([k]) => k));
+    for (const [k, v] of Object.entries(t)) {
+      if (standard.has(k)) continue;
+      if (v && String(v).trim()) parts.push(`${k}: ${String(v).trim()}`);
+    }
+    return parts.length ? `${character.name} — ${parts.join(", ")}.` : character.name;
+  })();
+
+  // Selected model's capability — drives the UI dimming and the warning.
+  const selectedModelDef = availableModels.find((m) => m.id === selectedModel);
+  // Default to true for unknown models so we don't accidentally hide the
+  // reference image area when /api/models is still loading.
+  const supportsReferenceImage = selectedModelDef?.supports_reference_image ?? true;
 
   useEffect(() => {
     let cancelled = false;
@@ -274,6 +309,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
           artStyle: cinematography.artStyle,
           poseId: poseId || undefined,
           model: selectedModel,
+          appearanceFallback,
         }),
       });
       const data = await res.json();
@@ -290,7 +326,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       }
       return { image_url: data.image_url, model_used: data.model_used };
     },
-    [character.base_image_url, character.profile, emotionalOverride, emotionalOverrideCustom, cinematography, poseId, selectedModel],
+    [character.base_image_url, character.profile, emotionalOverride, emotionalOverrideCustom, cinematography, poseId, selectedModel, appearanceFallback],
   );
 
   // Compress and save an image
@@ -1085,13 +1121,26 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left: Prompt Builder */}
         <div className="space-y-4">
-          {/* Reference Image */}
+          {/* Reference Image — visually dimmed when the chosen model is
+              text-to-image only. Identity is then carried by the
+              CHARACTER APPEARANCE block the server appends to the prompt. */}
           {character.base_image_url && (
-            <div>
+            <div className={supportsReferenceImage ? "" : "opacity-50"}>
               <label className="block text-sm text-muted mb-2">Reference Image</label>
               <div
-                className="w-32 h-32 rounded-lg border border-border overflow-hidden cursor-pointer hover:border-accent/40 transition-colors"
-                onClick={() => onLightboxOpen(character.base_image_url)}
+                className={`w-32 h-32 rounded-lg border border-border overflow-hidden transition-colors ${
+                  supportsReferenceImage
+                    ? "cursor-pointer hover:border-accent/40"
+                    : "cursor-not-allowed grayscale"
+                }`}
+                onClick={() => {
+                  if (supportsReferenceImage) onLightboxOpen(character.base_image_url);
+                }}
+                title={
+                  supportsReferenceImage
+                    ? undefined
+                    : "Reference images aren't supported by the selected model — switch to a Gemini model to use this image."
+                }
               >
                 <img
                   src={character.base_image_url}
@@ -1100,7 +1149,24 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
                 />
               </div>
               <p className="text-xs text-muted mt-1">
-                Sent as reference for character consistency
+                {supportsReferenceImage
+                  ? "Sent as reference for character consistency."
+                  : "Disabled — the selected model is text-to-image only."}
+              </p>
+            </div>
+          )}
+
+          {/* Capability notice — appears whenever the chosen model can't
+              accept reference images, so the user knows BEFORE they hit
+              Generate why identity will rely on the prompt alone. */}
+          {!supportsReferenceImage && (
+            <div className="p-2.5 rounded-lg border border-accent/30 bg-accent/5 text-[11px] text-text/90 leading-snug">
+              <p className="text-accent">⚠ Text-to-image only</p>
+              <p className="text-muted mt-0.5">
+                This model generates from the text description alone. Reference images are
+                not used. The character&apos;s description and traits are auto-appended to
+                the prompt as a CHARACTER APPEARANCE block. For tighter character
+                consistency from a reference photo, switch to a Gemini model.
               </p>
             </div>
           )}

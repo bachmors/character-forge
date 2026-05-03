@@ -18,6 +18,9 @@ export const stability: ImageProvider = {
   description: "Stable Diffusion XL, SD3, SD3.5. Open ecosystem, strong control.",
   modelPatterns: [/^stable.?diffusion/i, /^sdxl/i, /^sd3(\.\d+)?/i, /^sd-?xl/i],
   implemented: false,
+  // Stability's image-to-image endpoint exists but we currently scaffold
+  // text-to-image only.
+  supportsReferenceImage: false,
 
   async generateImage() {
     throw new Error("Stability provider not yet implemented. See providers/stability.ts for spec.");

@@ -94,6 +94,7 @@ export async function GET(req: NextRequest) {
       is_custom?: boolean;
       custom_provider_id?: string;
       uncensored?: boolean;
+      supports_reference_image?: boolean;
     }> = [];
     let usedFallback = false;
 
@@ -111,6 +112,7 @@ export async function GET(req: NextRequest) {
         provider: m.provider,
         provider_implemented: true,
         uncensored: m.uncensored,
+        supports_reference_image: provider.supportsReferenceImage,
       });
     }
 
@@ -139,6 +141,7 @@ export async function GET(req: NextRequest) {
             provider_implemented: true,
             is_custom: true,
             custom_provider_id: String(cp._id),
+            supports_reference_image: cp.supportsReferenceImage === true,
           });
         }
       }
@@ -161,16 +164,17 @@ export async function GET(req: NextRequest) {
           providerFromMatch ||
           (typeof d.provider === "string" ? d.provider.toLowerCase() : "") ||
           "unknown";
+        const providerDef = PROVIDERS.find((p) => p.id === provider);
         return {
           id,
           name: String(d.name || id),
           provider,
-          provider_implemented:
-            PROVIDERS.find((p) => p.id === provider)?.implemented ?? false,
+          provider_implemented: providerDef?.implemented ?? false,
           description: d.description,
           // Carry the curated uncensored flag onto registry rows so the UI
           // doesn't lose the badge if the registry shadows a curated model.
           uncensored: getCuratedModel(id)?.uncensored,
+          supports_reference_image: providerDef?.supportsReferenceImage ?? false,
         };
       });
       normalised.push(...fromRegistry);
@@ -180,14 +184,17 @@ export async function GET(req: NextRequest) {
 
     if (normalised.length === 0) {
       usedFallback = true;
-      normalised = FALLBACK_IMAGE_MODELS.map((m) => ({
-        id: m.id,
-        name: m.name,
-        provider: m.provider,
-        provider_implemented:
-          PROVIDERS.find((p) => p.id === m.provider)?.implemented ?? false,
-        uncensored: m.uncensored,
-      }));
+      normalised = FALLBACK_IMAGE_MODELS.map((m) => {
+        const providerDef = PROVIDERS.find((p) => p.id === m.provider);
+        return {
+          id: m.id,
+          name: m.name,
+          provider: m.provider,
+          provider_implemented: providerDef?.implemented ?? false,
+          uncensored: m.uncensored,
+          supports_reference_image: providerDef?.supportsReferenceImage ?? false,
+        };
+      });
     }
 
     let filtered = normalised;

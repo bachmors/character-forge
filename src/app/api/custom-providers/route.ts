@@ -17,6 +17,7 @@ interface PostBody {
   imageEndpoint?: string;
   authType?: CustomAuthType;
   authHeaderName?: string | null;
+  supportsReferenceImage?: boolean;
   models?: Array<Partial<CustomModel> & { modelId: string; displayName: string }>;
 }
 
@@ -44,6 +45,7 @@ export async function GET() {
         imageEndpoint: d.imageEndpoint,
         authType: d.authType,
         authHeaderName: d.authHeaderName,
+        supportsReferenceImage: d.supportsReferenceImage === true,
         models: d.models || [],
         created_at: d.created_at,
         updated_at: d.updated_at,
@@ -85,6 +87,7 @@ export async function POST(req: NextRequest) {
       imageEndpoint: body.imageEndpoint || "/images/generations",
       authType: (body.authType || "bearer") as CustomAuthType,
       authHeaderName: body.authHeaderName || null,
+      supportsReferenceImage: body.supportsReferenceImage === true,
       models: (body.models || []).map((m) => ({
         modelId: m.modelId,
         displayName: m.displayName,

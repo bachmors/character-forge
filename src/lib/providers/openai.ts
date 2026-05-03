@@ -19,6 +19,10 @@ export const openai: ImageProvider = {
   description: "DALL·E 3, GPT-image-1. Strong text rendering, photographic style.",
   modelPatterns: [/^dall-?e-?\d/i, /^gpt-image/i, /^gpt-4o.*image/i],
   implemented: false,
+  // DALL·E 3 is text-to-image; gpt-image-1 supports image edits via
+  // /v1/images/edits, but our generation flow only uses
+  // /v1/images/generations for now. Flip to true once the edit path is wired.
+  supportsReferenceImage: false,
 
   async generateImage() {
     throw new Error("OpenAI provider not yet implemented. See providers/openai.ts for spec.");

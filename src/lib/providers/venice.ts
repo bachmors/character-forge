@@ -96,6 +96,9 @@ export const venice: ImageProvider = {
     /^nano-banana(-pro|-\d)?$/i,
   ],
   implemented: true,
+  // Venice's /v1/image/generate is text-to-image only — no reference
+  // images. Identity has to be carried by the prompt.
+  supportsReferenceImage: false,
 
   async generateImage(
     apiKey: string,

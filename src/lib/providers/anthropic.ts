@@ -15,6 +15,8 @@ export const anthropic: ImageProvider = {
   description: "Claude understands images but does not generate them — used for analysis paths.",
   modelPatterns: [/^claude.*image/i],
   implemented: false,
+  // Claude understands images but does not generate them.
+  supportsReferenceImage: false,
 
   async generateImage() {
     throw new Error(

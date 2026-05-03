@@ -58,6 +58,12 @@ export interface ImageProvider {
   modelPatterns: RegExp[];
   /** Whether generateImage is wired up; false ⇒ placeholder (Settings shows "soon") */
   implemented: boolean;
+  /**
+   * True when the provider's image models accept a reference image alongside
+   * the prompt (used for identity preservation). When false the route
+   * substitutes a CHARACTER APPEARANCE description into the prompt instead.
+   */
+  supportsReferenceImage: boolean;
   generateImage(
     apiKey: string,
     model: string,

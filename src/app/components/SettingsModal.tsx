@@ -46,6 +46,7 @@ interface CustomProvider {
   imageEndpoint: string;
   authType: "bearer" | "header" | "none";
   authHeaderName: string | null;
+  supportsReferenceImage?: boolean;
   models: CustomModel[];
 }
 
@@ -80,6 +81,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
     imageEndpoint: "/images/generations",
     authType: "bearer" as "bearer" | "header" | "none",
     authHeaderName: "",
+    supportsReferenceImage: false,
   });
   const [cpModelDrafts, setCpModelDrafts] = useState<CustomModel[]>([]);
   const [cpModelInput, setCpModelInput] = useState({
@@ -139,6 +141,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       imageEndpoint: "/images/generations",
       authType: "bearer",
       authHeaderName: "",
+      supportsReferenceImage: false,
     });
     setCpModelDrafts([]);
     setCpModelInput({ modelId: "", displayName: "", type: "image", defaultParams: "" });
@@ -156,6 +159,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       imageEndpoint: cp.imageEndpoint,
       authType: cp.authType,
       authHeaderName: cp.authHeaderName || "",
+      supportsReferenceImage: cp.supportsReferenceImage === true,
     });
     setCpModelDrafts(cp.models);
     setShowCustomForm(true);
@@ -199,6 +203,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
       imageEndpoint: cpDraft.imageEndpoint,
       authType: cpDraft.authType,
       authHeaderName: cpDraft.authType === "header" ? cpDraft.authHeaderName : null,
+      supportsReferenceImage: cpDraft.supportsReferenceImage,
       models: cpModelDrafts,
     };
     const res = editingId
@@ -604,6 +609,22 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                       />
                     </div>
                   )}
+                  <div className="sm:col-span-2">
+                    <label className="flex items-center gap-2 text-[11px] text-muted">
+                      <input
+                        type="checkbox"
+                        checked={cpDraft.supportsReferenceImage}
+                        onChange={(e) =>
+                          setCpDraft({ ...cpDraft, supportsReferenceImage: e.target.checked })
+                        }
+                        className="accent-accent"
+                      />
+                      Supports reference images
+                      <span className="text-muted/60">
+                        (the provider accepts an init / reference image alongside the prompt)
+                      </span>
+                    </label>
+                  </div>
                 </div>
 
                 {/* Models in this provider */}

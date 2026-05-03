@@ -19,6 +19,10 @@ export const gemini: ImageProvider = {
     /^gemini-3\.1-flash-image/i,
   ],
   implemented: true,
+  // Gemini's multimodal endpoint takes inlineData parts so we can pass
+  // the character's reference image alongside the prompt for identity
+  // preservation.
+  supportsReferenceImage: true,
 
   async generateImage(
     apiKey: string,

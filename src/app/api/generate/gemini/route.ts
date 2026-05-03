@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
       artStyle,
       poseId,
       model: modelId,
+      appearanceFallback,
     }: {
       prompt: string;
       referenceImageUrl?: string;
@@ -49,6 +50,13 @@ export async function POST(req: NextRequest) {
       artStyle?: string | null;
       poseId?: string | null;
       model?: string;
+      /**
+       * Detailed CHARACTER APPEARANCE block sent by the client. Only
+       * appended to the prompt when the selected provider doesn't support
+       * reference images — for Gemini it's redundant since the reference
+       * image carries identity directly.
+       */
+      appearanceFallback?: string;
     } = await req.json();
 
     // Multi-provider routing. Models are dispatched to the right provider
@@ -147,6 +155,33 @@ export async function POST(req: NextRequest) {
     if (poseInstruction) finalPrompt = `${finalPrompt}\n\n${poseInstruction.trim()}`;
     if (cinematographyInstruction) finalPrompt = `${finalPrompt}\n\n${cinematographyInstruction.trim()}`;
     if (artStyleInstruction) finalPrompt = `${finalPrompt}\n\n${artStyleInstruction.trim()}`;
+
+    // Reference-image capability lookup. Gemini supports it; Venice and
+    // every current scaffold do not. Custom-provider capability is read
+    // below when the custom branch is active.
+    const requestedProvider = isGemini
+      ? "google"
+      : isVenice
+        ? "venice"
+        : null;
+    const builtinSupportsRef =
+      requestedProvider === "google"
+        ? true
+        : requestedProvider === "venice"
+          ? false
+          : null;
+    // For text-only models, append the CHARACTER APPEARANCE block sent by
+    // the client so identity isn't lost without a reference image. We do
+    // it server-side so the rule lives next to the routing decision.
+    const customSupportsRef = customProviderDoc
+      ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ((customProviderDoc as any).supportsReferenceImage === true)
+      : null;
+    const supportsRef =
+      builtinSupportsRef !== null ? builtinSupportsRef : customSupportsRef ?? false;
+    if (!supportsRef && appearanceFallback && appearanceFallback.trim()) {
+      finalPrompt = `${finalPrompt}\n\nCHARACTER APPEARANCE (no reference image is provided to this model — describe the character entirely from this text): ${appearanceFallback.trim()}`;
+    }
 
     const session = await getSession();
 

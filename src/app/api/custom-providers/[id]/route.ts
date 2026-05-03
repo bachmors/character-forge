@@ -40,6 +40,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     if (typeof body.imageEndpoint === "string") update.imageEndpoint = body.imageEndpoint;
     if (typeof body.authType === "string") update.authType = body.authType;
     if (body.authHeaderName !== undefined) update.authHeaderName = body.authHeaderName || null;
+    if (typeof body.supportsReferenceImage === "boolean")
+      update.supportsReferenceImage = body.supportsReferenceImage;
     if (Array.isArray(body.models)) update.models = body.models;
 
     const result = await db

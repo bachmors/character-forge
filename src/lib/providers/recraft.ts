@@ -15,6 +15,7 @@ export const recraft: ImageProvider = {
   description: "Recraft v3. Vector-friendly outputs and brand-style controls.",
   modelPatterns: [/^recraft/i],
   implemented: false,
+  supportsReferenceImage: false,
 
   async generateImage() {
     throw new Error("Recraft provider not yet implemented. See providers/recraft.ts for spec.");

@@ -251,29 +251,10 @@ export async function POST(req: NextRequest) {
         );
       }
       try {
-        // Resolve the reference image into base64 inlineData when we're
-        // using a reference-capable Venice model AND the character carries one.
-        const veniceRefs: Array<{ data: string; mimeType: string }> = [];
-        if (veniceModelSupportsRef(requestedModel) && referenceImageUrl) {
-          try {
-            if (referenceImageUrl.startsWith("data:")) {
-              const m = referenceImageUrl.match(/^data:(.+?);base64,(.+)$/);
-              if (m) veniceRefs.push({ mimeType: m[1], data: m[2] });
-            } else {
-              const r = await fetch(referenceImageUrl);
-              if (r.ok) {
-                const buf = await r.arrayBuffer();
-                veniceRefs.push({
-                  mimeType: r.headers.get("content-type") || "image/jpeg",
-                  data: Buffer.from(buf).toString("base64"),
-                });
-              }
-            }
-          } catch (e) {
-            console.warn("Venice: could not load reference image:", e);
-          }
-        }
-
+        // All Venice image models are text-to-image (OpenAI-compatible
+        // /v1/images/generations). The CHARACTER APPEARANCE block was
+        // already appended to finalPrompt earlier in this route — Venice
+        // gets identity entirely through the prompt.
         const { venice } = await import("@/lib/providers/venice");
         const result = await venice.generateImage(veniceKey, requestedModel, {
           prompt: finalPrompt,
@@ -281,7 +262,6 @@ export async function POST(req: NextRequest) {
           imageSize: "1K",
           // safe_mode comes from per-user Settings; defaults to false.
           safeMode: session.veniceSafeMode === true,
-          referenceImages: veniceRefs.length > 0 ? veniceRefs : undefined,
         });
         return NextResponse.json({
           image_url: result.imageDataUrl,

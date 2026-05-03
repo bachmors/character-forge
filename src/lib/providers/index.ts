@@ -149,8 +149,8 @@ export const FALLBACK_IMAGE_MODELS: CuratedModel[] = [
     uncensored: m.uncensored,
     paid: m.paid,
     privateModel: m.privateModel,
-    recommended: m.recommended,
-    supportsReferenceImage: m.supportsReferenceImage,
+    // Venice image models are all text-to-image today.
+    supportsReferenceImage: false,
     group: m.group,
   })),
 ];

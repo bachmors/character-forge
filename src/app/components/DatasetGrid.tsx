@@ -18,6 +18,7 @@ interface TimelineImage {
   favorite: boolean;
   rating?: number;
   target_age?: number | null;
+  provider?: string | null;
   created_at: string;
 }
 
@@ -309,6 +310,7 @@ interface CharacterImage {
   favorite: boolean;
   rating?: number;
   target_age?: number | null;
+  provider?: string | null;
   created_at: string;
 }
 
@@ -336,6 +338,7 @@ export default function DatasetGrid({
   onDeleteImage,
 }: DatasetGridProps) {
   const [activeCategory, setActiveCategory] = useState<CategoryId | "all">("all");
+  const [modelFilter, setModelFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"gallery" | "timeline">("gallery");
   const [timelineSort, setTimelineSort] = useState<"date" | "age">("date");
   const [compareMode, setCompareMode] = useState(false);
@@ -377,10 +380,20 @@ export default function DatasetGrid({
     };
   }, [compareImages]);
 
-  const filteredImages =
-    activeCategory === "all"
-      ? images
-      : images.filter((img) => img.category === activeCategory);
+  const distinctModels = useMemo(() => {
+    const s = new Set<string>();
+    for (const img of images) if (img.model_used) s.add(img.model_used);
+    return Array.from(s).sort();
+  }, [images]);
+
+  const filteredImages = useMemo(() => {
+    let list =
+      activeCategory === "all"
+        ? images
+        : images.filter((img) => img.category === activeCategory);
+    if (modelFilter !== "all") list = list.filter((img) => img.model_used === modelFilter);
+    return list;
+  }, [images, activeCategory, modelFilter]);
 
   // Build checklist: for each standard pose, check if we have an image
   const checklist = STANDARD_POSES.map((pose) => {
@@ -449,6 +462,23 @@ export default function DatasetGrid({
           );
         })}
         <div className="ml-auto flex items-center gap-2 shrink-0">
+          {/* Model filter (Phase B). Only renders when there are 2+ models in the set. */}
+          {distinctModels.length > 1 && (
+            <select
+              value={modelFilter}
+              onChange={(e) => setModelFilter(e.target.value)}
+              className="bg-bg border border-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-border-strong"
+              title="Filter by model"
+            >
+              <option value="all">All models</option>
+              {distinctModels.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          )}
+
           {/* View mode: Gallery / Timeline */}
           <div className="flex border border-border rounded overflow-hidden">
             <button
@@ -793,7 +823,12 @@ export default function DatasetGrid({
               {/* Info bar */}
               <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <p className="text-xs text-text truncate">{image.subcategory.replace(/_/g, " ")}</p>
-                <p className="text-xs text-muted truncate">{image.model_used}</p>
+                <p className="text-xs text-muted truncate">
+                  {image.model_used}
+                  {image.provider && (
+                    <span className="ml-1 text-[10px] text-accent/70">· {image.provider}</span>
+                  )}
+                </p>
                 {/* 5-star rating (Module 14) */}
                 {onSetRating && (
                   <div className="flex items-center gap-0.5 mt-0.5" onClick={(e) => e.stopPropagation()}>

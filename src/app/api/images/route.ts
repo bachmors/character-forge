@@ -44,7 +44,17 @@ export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
     const body = await req.json();
-    const { character_id, category, subcategory, image_url, prompt_used, model_used, target_age } = body;
+    const {
+      character_id,
+      category,
+      subcategory,
+      image_url,
+      prompt_used,
+      model_used,
+      provider,
+      model_version,
+      target_age,
+    } = body;
 
     if (!character_id || !image_url) {
       return NextResponse.json(
@@ -84,6 +94,25 @@ export async function POST(req: NextRequest) {
         : typeof target_age === "string" && target_age.trim() !== ""
           ? Number(target_age)
           : null;
+    // Derive provider from model name when not supplied (so existing client
+    // calls don't have to send it explicitly).
+    const inferredProvider =
+      provider ||
+      (typeof model_used === "string"
+        ? /^gemini/i.test(model_used)
+          ? "google"
+          : /^dall-?e|^gpt-image/i.test(model_used)
+            ? "openai"
+            : /^stable.?diffusion|^sdxl|^sd3/i.test(model_used)
+              ? "stability"
+              : /^flux/i.test(model_used)
+                ? "flux"
+                : /^ideogram/i.test(model_used)
+                  ? "ideogram"
+                  : /^recraft/i.test(model_used)
+                    ? "recraft"
+                    : null
+        : null);
     const image = {
       character_id: new ObjectId(character_id),
       user_id: new ObjectId(user._id),
@@ -92,6 +121,8 @@ export async function POST(req: NextRequest) {
       image_url,
       prompt_used: prompt_used || "",
       model_used: model_used || "unknown",
+      provider: inferredProvider,
+      model_version: model_version || null,
       target_age: ageNum !== null && Number.isFinite(ageNum) ? ageNum : null,
       selected: false,
       created_at: new Date(),

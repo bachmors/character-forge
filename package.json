@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "migrate:multi-user": "tsx scripts/migrate-multi-user.ts"
+    "migrate:multi-user": "tsx scripts/migrate-multi-user.ts",
+    "migrate:models": "tsx scripts/migrate-models.ts"
   },
   "dependencies": {
     "@google/genai": "^1.50.1",
@@ -25,6 +26,7 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "dotenv": "^17.4.2",
     "eslint": "^8",
     "eslint-config-next": "14.2.35",
     "postcss": "^8",

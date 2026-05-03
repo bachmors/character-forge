@@ -121,6 +121,10 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       is_custom?: boolean;
       uncensored?: boolean;
       supports_reference_image?: boolean;
+      paid?: boolean;
+      private_model?: boolean;
+      recommended?: boolean;
+      group?: "ref" | "uncensored" | "standard";
     }>
   >([]);
   const [selectedModel, setSelectedModel] = useState<string>("gemini-3.1-flash-image-preview");
@@ -1450,14 +1454,74 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
                   Gemini 3.1 Flash (image preview)
                 </option>
               ) : (
-                availableModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.uncensored ? "🔓 " : ""}
-                    {m.name} ({m.is_custom ? "custom" : m.provider}
-                    {!m.provider_implemented && !m.is_custom ? " · scaffold" : ""}
-                    {m.uncensored ? " · uncensored" : ""})
-                  </option>
-                ))
+                (() => {
+                  // Group rendering: reference-capable / uncensored /
+                  // standard / custom / other. Within each group keep the
+                  // server's order (recommended ones surface first inside
+                  // the "ref" group via the curated metadata).
+                  const groups: Record<string, typeof availableModels> = {
+                    ref: [],
+                    uncensored: [],
+                    standard: [],
+                    custom: [],
+                    other: [],
+                  };
+                  for (const m of availableModels) {
+                    if (m.is_custom) groups.custom.push(m);
+                    else if (m.supports_reference_image) groups.ref.push(m);
+                    else if (m.uncensored) groups.uncensored.push(m);
+                    else if (m.group === "standard") groups.standard.push(m);
+                    else groups.other.push(m);
+                  }
+                  const renderOption = (m: (typeof availableModels)[number]) => {
+                    const tags: string[] = [];
+                    if (m.supports_reference_image) tags.push("📷 ref");
+                    if (m.uncensored) tags.push("🔓 uncensored");
+                    if (m.paid) tags.push("💰 paid");
+                    if (m.recommended) tags.push("★ recommended");
+                    const tail =
+                      tags.length > 0
+                        ? ` — ${tags.join(" · ")}`
+                        : !m.provider_implemented && !m.is_custom
+                          ? " · scaffold"
+                          : "";
+                    return (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.is_custom ? "custom" : m.provider})
+                        {tail}
+                      </option>
+                    );
+                  };
+                  return (
+                    <>
+                      {groups.ref.length > 0 && (
+                        <optgroup label="📷 Reference Image Support">
+                          {groups.ref.map(renderOption)}
+                        </optgroup>
+                      )}
+                      {groups.uncensored.length > 0 && (
+                        <optgroup label="🎬 Uncensored (Film Production)">
+                          {groups.uncensored.map(renderOption)}
+                        </optgroup>
+                      )}
+                      {groups.standard.length > 0 && (
+                        <optgroup label="🎨 Standard">
+                          {groups.standard.map(renderOption)}
+                        </optgroup>
+                      )}
+                      {groups.custom.length > 0 && (
+                        <optgroup label="🛠 Custom Providers">
+                          {groups.custom.map(renderOption)}
+                        </optgroup>
+                      )}
+                      {groups.other.length > 0 && (
+                        <optgroup label="Other">
+                          {groups.other.map(renderOption)}
+                        </optgroup>
+                      )}
+                    </>
+                  );
+                })()
               )}
             </select>
             {availableModels.find((m) => m.id === selectedModel)?.provider_implemented === false && (

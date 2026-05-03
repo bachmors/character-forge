@@ -22,6 +22,11 @@ interface ModelEntry {
   provider_implemented: boolean;
   is_custom?: boolean;
   uncensored?: boolean;
+  paid?: boolean;
+  private_model?: boolean;
+  recommended?: boolean;
+  supports_reference_image?: boolean;
+  group?: "ref" | "uncensored" | "standard";
 }
 
 interface ModelsResponse {
@@ -409,22 +414,29 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                         Test
                       </button>
                     </div>
-                    {/* Venice-only: Safe Mode toggle. */}
+                    {/* Venice-only: Safe Mode toggle + warning when OFF. */}
                     {p.id === "venice" && (
-                      <label className="flex items-center gap-2 text-[11px] text-muted pt-1">
-                        <input
-                          type="checkbox"
-                          checked={veniceSafeMode}
-                          onChange={(e) => setVeniceSafeMode(e.target.checked)}
-                          className="accent-accent"
-                        />
-                        Safe mode{" "}
-                        <span className="text-muted/60">
-                          {veniceSafeMode
-                            ? "ON — content filtering applied"
-                            : "OFF — uncensored (default)"}
-                        </span>
-                      </label>
+                      <div className="space-y-1 pt-1">
+                        <label className="flex items-center gap-2 text-[11px] text-muted">
+                          <input
+                            type="checkbox"
+                            checked={veniceSafeMode}
+                            onChange={(e) => setVeniceSafeMode(e.target.checked)}
+                            className="accent-accent"
+                          />
+                          Safe mode{" "}
+                          <span className="text-muted/60">
+                            {veniceSafeMode
+                              ? "ON — content filtering applied"
+                              : "OFF — uncensored (default)"}
+                          </span>
+                        </label>
+                        {!veniceSafeMode && (
+                          <p className="text-[10px] text-danger/80 ml-6">
+                            ⚠ Content filters disabled. Use responsibly for production purposes.
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
                 );
@@ -786,11 +798,27 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                         ★
                       </button>
                       <div className="flex-1 min-w-0">
-                        <p className="text-text truncate flex items-center gap-1">
+                        <p className="text-text truncate flex items-center gap-1 flex-wrap">
+                          {m.recommended && (
+                            <span
+                              className="text-[9px] px-1 rounded bg-accent/20 text-accent border border-accent/40"
+                              title="Recommended for character consistency"
+                            >
+                              ★ rec
+                            </span>
+                          )}
                           {m.name}
                           {m.is_custom && (
                             <span className="text-[9px] uppercase tracking-wide px-1 rounded bg-accent/15 text-accent border border-accent/30">
                               custom
+                            </span>
+                          )}
+                          {m.supports_reference_image && (
+                            <span
+                              className="text-[9px] uppercase tracking-wide px-1 rounded bg-accent/15 text-accent border border-accent/30"
+                              title="Accepts a reference image"
+                            >
+                              📷 ref
                             </span>
                           )}
                           {m.uncensored && (
@@ -798,7 +826,15 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                               className="text-[9px] uppercase tracking-wide px-1 rounded bg-danger/15 text-danger border border-danger/30"
                               title="No content filters"
                             >
-                              uncensored
+                              🔓 uncensored
+                            </span>
+                          )}
+                          {m.paid && (
+                            <span
+                              className="text-[9px] uppercase tracking-wide px-1 rounded bg-bg/50 text-muted border border-border"
+                              title="Requires paid credits"
+                            >
+                              💰
                             </span>
                           )}
                         </p>

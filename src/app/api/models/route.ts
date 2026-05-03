@@ -95,6 +95,10 @@ export async function GET(req: NextRequest) {
       custom_provider_id?: string;
       uncensored?: boolean;
       supports_reference_image?: boolean;
+      paid?: boolean;
+      private_model?: boolean;
+      recommended?: boolean;
+      group?: "ref" | "uncensored" | "standard";
     }> = [];
     let usedFallback = false;
 
@@ -112,7 +116,17 @@ export async function GET(req: NextRequest) {
         provider: m.provider,
         provider_implemented: true,
         uncensored: m.uncensored,
-        supports_reference_image: provider.supportsReferenceImage,
+        // Per-model override takes precedence over the provider-level flag,
+        // because Venice has a single ref-capable model and many that are
+        // not.
+        supports_reference_image:
+          m.supportsReferenceImage !== undefined
+            ? m.supportsReferenceImage
+            : provider.supportsReferenceImage,
+        paid: m.paid,
+        private_model: m.privateModel,
+        recommended: m.recommended,
+        group: m.group,
       });
     }
 
@@ -165,16 +179,25 @@ export async function GET(req: NextRequest) {
           (typeof d.provider === "string" ? d.provider.toLowerCase() : "") ||
           "unknown";
         const providerDef = PROVIDERS.find((p) => p.id === provider);
+        const curated = getCuratedModel(id);
         return {
           id,
           name: String(d.name || id),
           provider,
           provider_implemented: providerDef?.implemented ?? false,
           description: d.description,
-          // Carry the curated uncensored flag onto registry rows so the UI
-          // doesn't lose the badge if the registry shadows a curated model.
-          uncensored: getCuratedModel(id)?.uncensored,
-          supports_reference_image: providerDef?.supportsReferenceImage ?? false,
+          // Carry the curated metadata onto registry rows so the UI
+          // doesn't lose badges/grouping if the registry shadows a curated
+          // model with the same id.
+          uncensored: curated?.uncensored,
+          supports_reference_image:
+            curated?.supportsReferenceImage !== undefined
+              ? curated.supportsReferenceImage
+              : providerDef?.supportsReferenceImage ?? false,
+          paid: curated?.paid,
+          private_model: curated?.privateModel,
+          recommended: curated?.recommended,
+          group: curated?.group,
         };
       });
       normalised.push(...fromRegistry);
@@ -192,7 +215,14 @@ export async function GET(req: NextRequest) {
           provider: m.provider,
           provider_implemented: providerDef?.implemented ?? false,
           uncensored: m.uncensored,
-          supports_reference_image: providerDef?.supportsReferenceImage ?? false,
+          supports_reference_image:
+            m.supportsReferenceImage !== undefined
+              ? m.supportsReferenceImage
+              : providerDef?.supportsReferenceImage ?? false,
+          paid: m.paid,
+          private_model: m.privateModel,
+          recommended: m.recommended,
+          group: m.group,
         };
       });
     }

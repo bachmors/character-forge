@@ -22,7 +22,7 @@ import {
   parseImageResponse,
   type CustomAuthType,
 } from "@/lib/customProviders";
-import { isVeniceImageModel } from "@/lib/providers/venice";
+import { isVeniceImageModel, veniceModelSupportsRef } from "@/lib/providers/venice";
 
 export async function POST(req: NextRequest) {
   try {
@@ -156,9 +156,8 @@ export async function POST(req: NextRequest) {
     if (cinematographyInstruction) finalPrompt = `${finalPrompt}\n\n${cinematographyInstruction.trim()}`;
     if (artStyleInstruction) finalPrompt = `${finalPrompt}\n\n${artStyleInstruction.trim()}`;
 
-    // Reference-image capability lookup. Gemini supports it; Venice and
-    // every current scaffold do not. Custom-provider capability is read
-    // below when the custom branch is active.
+    // Reference-image capability lookup. Gemini supports it for every
+    // image model. Venice supports it only for qwen-edit-2511.
     const requestedProvider = isGemini
       ? "google"
       : isVenice
@@ -168,7 +167,7 @@ export async function POST(req: NextRequest) {
       requestedProvider === "google"
         ? true
         : requestedProvider === "venice"
-          ? false
+          ? veniceModelSupportsRef(requestedModel)
           : null;
     // For text-only models, append the CHARACTER APPEARANCE block sent by
     // the client so identity isn't lost without a reference image. We do
@@ -235,7 +234,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Venice branch (text-only — Venice doesn't accept reference images).
+    // ── Venice branch.
+    //   • Most Venice models are text-to-image → /v1/image/generate
+    //   • qwen-edit-2511 is image-to-image → /v1/image/edit
+    // The provider's generateImage() picks the endpoint based on whether
+    // referenceImages[] is present AND the chosen model is reference-capable.
     if (isVenice) {
       const veniceKey = session.apiKeys?.venice || process.env.VENICE_API_KEY;
       if (!veniceKey) {
@@ -248,6 +251,29 @@ export async function POST(req: NextRequest) {
         );
       }
       try {
+        // Resolve the reference image into base64 inlineData when we're
+        // using a reference-capable Venice model AND the character carries one.
+        const veniceRefs: Array<{ data: string; mimeType: string }> = [];
+        if (veniceModelSupportsRef(requestedModel) && referenceImageUrl) {
+          try {
+            if (referenceImageUrl.startsWith("data:")) {
+              const m = referenceImageUrl.match(/^data:(.+?);base64,(.+)$/);
+              if (m) veniceRefs.push({ mimeType: m[1], data: m[2] });
+            } else {
+              const r = await fetch(referenceImageUrl);
+              if (r.ok) {
+                const buf = await r.arrayBuffer();
+                veniceRefs.push({
+                  mimeType: r.headers.get("content-type") || "image/jpeg",
+                  data: Buffer.from(buf).toString("base64"),
+                });
+              }
+            }
+          } catch (e) {
+            console.warn("Venice: could not load reference image:", e);
+          }
+        }
+
         const { venice } = await import("@/lib/providers/venice");
         const result = await venice.generateImage(veniceKey, requestedModel, {
           prompt: finalPrompt,
@@ -255,6 +281,7 @@ export async function POST(req: NextRequest) {
           imageSize: "1K",
           // safe_mode comes from per-user Settings; defaults to false.
           safeMode: session.veniceSafeMode === true,
+          referenceImages: veniceRefs.length > 0 ? veniceRefs : undefined,
         });
         return NextResponse.json({
           image_url: result.imageDataUrl,

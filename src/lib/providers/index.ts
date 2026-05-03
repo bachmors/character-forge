@@ -17,7 +17,7 @@ import { ideogram } from "./ideogram";
 import { anthropic } from "./anthropic";
 import { replicate } from "./replicate";
 import { recraft } from "./recraft";
-import { venice } from "./venice";
+import { venice, VENICE_IMAGE_MODELS } from "./venice";
 
 export interface ReferenceImage {
   /** base64-encoded image data without the data: URL prefix */
@@ -99,6 +99,25 @@ export interface CuratedModel {
   provider: string;
   name: string;
   uncensored?: boolean;
+  /** Requires paid credits on the provider's side. */
+  paid?: boolean;
+  /** Provider-private (not publicly listed). */
+  privateModel?: boolean;
+  /** Recommended highlight (e.g. "Best for character consistency"). */
+  recommended?: boolean;
+  /**
+   * Per-model override of the provider-level supportsReferenceImage flag.
+   * For Venice, qwen-edit-2511 is true and every other Venice model is false.
+   */
+  supportsReferenceImage?: boolean;
+  /**
+   * UI grouping hint:
+   *   "ref"        → reference-image capable
+   *   "uncensored" → text-only, no content filters
+   *   "standard"   → text-only, standard moderation
+   * (consumer is free to ignore.)
+   */
+  group?: "ref" | "uncensored" | "standard";
 }
 
 /**
@@ -120,17 +139,20 @@ export const FALLBACK_IMAGE_MODELS: CuratedModel[] = [
   { id: "flux-kontext-pro", provider: "flux", name: "FLUX Kontext Pro" },
   { id: "ideogram-v3", provider: "ideogram", name: "Ideogram v3" },
   { id: "recraft-v3", provider: "recraft", name: "Recraft v3" },
-  // Venice — full image-generation lineup (9 models). Uncensored ones
-  // are explicitly flagged so the UI can badge them.
-  { id: "flux-dev-uncensored", provider: "venice", name: "FLUX Dev Uncensored (Venice)", uncensored: true },
-  { id: "flux-dev", provider: "venice", name: "FLUX Dev (Venice)" },
-  { id: "fluently-xl", provider: "venice", name: "Fluently XL (Venice)" },
-  { id: "grok-imagine-image", provider: "venice", name: "Grok Imagine (Venice)", uncensored: true },
-  { id: "venice-sd35", provider: "venice", name: "Stable Diffusion 3.5 (Venice)" },
-  { id: "qwen-image-2", provider: "venice", name: "Qwen Image v2 (Venice)" },
-  { id: "gpt-image-2", provider: "venice", name: "GPT Image 2 (Venice)" },
-  { id: "nano-banana-pro", provider: "venice", name: "Nano Banana Pro (Venice)" },
-  { id: "nano-banana-2", provider: "venice", name: "Nano Banana v2 (Venice)" },
+  // Venice — derived from VENICE_IMAGE_MODELS so the curated list, the
+  // /api/models response, and the provider's runtime metadata stay in
+  // perfect sync (one source of truth).
+  ...VENICE_IMAGE_MODELS.map((m) => ({
+    id: m.id,
+    provider: "venice",
+    name: `${m.displayName} (Venice)`,
+    uncensored: m.uncensored,
+    paid: m.paid,
+    privateModel: m.privateModel,
+    recommended: m.recommended,
+    supportsReferenceImage: m.supportsReferenceImage,
+    group: m.group,
+  })),
 ];
 
 /** Look up the curated metadata for a model id (used for the uncensored flag). */

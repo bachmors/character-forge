@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { STANDARD_POSES, CATEGORIES, type CategoryId } from "@/lib/prompts";
 import { downloadImage } from "@/lib/imageUtils";
+
+const MAX_COMPARE = 4;
 
 interface CharacterImage {
   _id: string;
@@ -40,6 +42,44 @@ export default function DatasetGrid({
   onDeleteImage,
 }: DatasetGridProps) {
   const [activeCategory, setActiveCategory] = useState<CategoryId | "all">("all");
+  const [compareMode, setCompareMode] = useState(false);
+  // Ordered list of image _ids in the compare set (preserves the order in
+  // which the user picked them so cards render left→right deterministically).
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+
+  const toggleCompare = (image: CharacterImage) => {
+    setCompareIds((prev) => {
+      if (prev.includes(image._id)) return prev.filter((id) => id !== image._id);
+      if (prev.length >= MAX_COMPARE) return prev; // hard cap at MAX_COMPARE
+      return [...prev, image._id];
+    });
+  };
+
+  const exitCompare = () => {
+    setCompareMode(false);
+    setCompareIds([]);
+  };
+
+  // Resolve the selected ids to the actual image objects, preserving order
+  // and silently dropping any ids that no longer exist (e.g. after a delete).
+  const compareImages = useMemo(() => {
+    const byId = new Map(images.map((i) => [i._id, i]));
+    return compareIds.map((id) => byId.get(id)).filter((i): i is CharacterImage => Boolean(i));
+  }, [compareIds, images]);
+
+  // For each comparable field, compute whether values vary across the
+  // selected images. Used to highlight differences in the compare panel.
+  const compareDiff = useMemo(() => {
+    const setOf = <T,>(fn: (img: CharacterImage) => T) =>
+      new Set(compareImages.map(fn).map((v) => (v == null ? "" : String(v))));
+    return {
+      age: setOf((i) => i.target_age ?? null).size > 1,
+      category: setOf((i) => i.category).size > 1,
+      subcategory: setOf((i) => i.subcategory).size > 1,
+      prompt: setOf((i) => i.prompt_used || "").size > 1,
+      model: setOf((i) => i.model_used || "").size > 1,
+    };
+  }, [compareImages]);
 
   const filteredImages =
     activeCategory === "all"
@@ -84,7 +124,7 @@ export default function DatasetGrid({
         </div>
       </div>
 
-      {/* Category Tabs */}
+      {/* Category Tabs + Compare toggle */}
       <div className="flex items-center gap-2 mb-4 overflow-x-auto flex-nowrap">
         <button
           onClick={() => setActiveCategory("all")}
@@ -112,6 +152,22 @@ export default function DatasetGrid({
             </button>
           );
         })}
+        <button
+          onClick={() => {
+            if (compareMode) exitCompare();
+            else setCompareMode(true);
+          }}
+          className={`ml-auto px-3 py-1 rounded text-sm transition-colors whitespace-nowrap border ${
+            compareMode
+              ? "bg-accent/15 text-accent border-accent/30"
+              : "text-muted border-border hover:text-text hover:border-border-strong"
+          }`}
+          title="Select 2–4 images to compare side by side"
+        >
+          {compareMode
+            ? `Comparing (${compareImages.length}/${MAX_COMPARE}) — Exit`
+            : "Compare"}
+        </button>
       </div>
 
       {/* Standard Poses Checklist (collapsed by default) */}
@@ -145,6 +201,187 @@ export default function DatasetGrid({
         </div>
       </details>
 
+      {/* Compare panel */}
+      {compareMode && (
+        <div className="mb-6 border border-accent/30 bg-accent/5 rounded-lg p-3 md:p-4 animate-fade-in">
+          <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+            <div className="text-sm">
+              <span className="text-accent font-medium">Compare</span>
+              <span className="text-muted ml-2">
+                {compareImages.length === 0
+                  ? "Click images below to add them to the comparison."
+                  : compareImages.length < 2
+                    ? "Pick at least one more image."
+                    : `${compareImages.length} image${compareImages.length === 1 ? "" : "s"} side by side.`}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {compareImages.length > 0 && (
+                <button
+                  onClick={() => setCompareIds([])}
+                  className="px-2.5 py-1 rounded text-xs border border-border text-muted hover:text-text hover:border-border-strong transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+              <button
+                onClick={exitCompare}
+                className="px-2.5 py-1 rounded text-xs border border-border text-muted hover:text-text hover:border-border-strong transition-colors"
+              >
+                Exit
+              </button>
+            </div>
+          </div>
+
+          {compareImages.length === 0 ? (
+            <p className="text-xs text-muted/70 italic">
+              Up to {MAX_COMPARE} images can be compared at once.
+            </p>
+          ) : (
+            <div
+              className={`grid gap-3 grid-cols-1 ${
+                compareImages.length === 2
+                  ? "md:grid-cols-2"
+                  : compareImages.length === 3
+                    ? "md:grid-cols-3"
+                    : "md:grid-cols-2 lg:grid-cols-4"
+              }`}
+            >
+              {compareImages.map((img, idx) => (
+                <div
+                  key={img._id}
+                  className="border border-border rounded-lg overflow-hidden bg-surface flex flex-col"
+                >
+                  <div
+                    className="aspect-square bg-bg cursor-pointer"
+                    onClick={() => onLightboxOpen(img.image_url)}
+                  >
+                    <img
+                      src={img.image_url}
+                      alt={img.subcategory}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="p-2.5 text-xs space-y-1 flex-1">
+                    {/* Position number */}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="px-1.5 py-0.5 rounded-full bg-accent text-bg text-[10px] font-semibold">
+                        #{idx + 1}
+                      </span>
+                      <button
+                        onClick={() =>
+                          setCompareIds((prev) => prev.filter((id) => id !== img._id))
+                        }
+                        className="text-muted/60 hover:text-danger transition-colors"
+                        title="Remove from comparison"
+                      >
+                        <svg
+                          width="12"
+                          height="12"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+
+                    {/* Age — highlighted when ages vary */}
+                    <div
+                      className={
+                        compareDiff.age
+                          ? "text-accent font-medium"
+                          : "text-muted"
+                      }
+                    >
+                      Age:{" "}
+                      {typeof img.target_age === "number" && img.target_age > 0
+                        ? `${img.target_age}`
+                        : "as reference"}
+                    </div>
+
+                    {/* Pose / category */}
+                    <div
+                      className={
+                        compareDiff.subcategory || compareDiff.category
+                          ? "text-accent font-medium"
+                          : "text-muted"
+                      }
+                    >
+                      Pose: <span className="capitalize">{img.subcategory.replace(/_/g, " ")}</span>
+                      <span className="text-muted/70">
+                        {" · "}
+                        {img.category.replace(/_/g, " ")}
+                      </span>
+                    </div>
+
+                    {/* Model + date */}
+                    <div className={compareDiff.model ? "text-accent" : "text-muted/70"}>
+                      {img.model_used || "—"}
+                    </div>
+
+                    {/* Prompt — show only difference flag, full text takes too much room */}
+                    {compareDiff.prompt && (
+                      <details className="text-muted/80">
+                        <summary className="cursor-pointer text-accent/80 hover:text-accent">
+                          Prompt differs
+                        </summary>
+                        <pre className="mt-1 whitespace-pre-wrap break-words text-[11px] text-muted leading-snug font-mono">
+                          {img.prompt_used}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {compareImages.length >= 2 && (
+            <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
+              <span className="text-muted">Differences:</span>
+              {compareDiff.age && (
+                <span className="px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
+                  age
+                </span>
+              )}
+              {compareDiff.subcategory && (
+                <span className="px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
+                  pose
+                </span>
+              )}
+              {compareDiff.category && (
+                <span className="px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
+                  category
+                </span>
+              )}
+              {compareDiff.prompt && (
+                <span className="px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
+                  prompt
+                </span>
+              )}
+              {compareDiff.model && (
+                <span className="px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
+                  model
+                </span>
+              )}
+              {!compareDiff.age &&
+                !compareDiff.subcategory &&
+                !compareDiff.category &&
+                !compareDiff.prompt &&
+                !compareDiff.model && (
+                  <span className="text-muted/70 italic">
+                    All metadata identical — pure regenerations.
+                  </span>
+                )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Image Grid */}
       {filteredImages.length === 0 ? (
         <div className="text-center py-16">
@@ -176,17 +413,33 @@ export default function DatasetGrid({
               </div>
             </div>
           )}
-          {filteredImages.map((image) => (
+          {filteredImages.map((image) => {
+            const compareIdx = compareIds.indexOf(image._id);
+            const inCompare = compareIdx !== -1;
+            const compareFull = !inCompare && compareIds.length >= MAX_COMPARE;
+            return (
             <div
               key={image._id}
-              className={`group relative rounded-lg border overflow-hidden transition-all cursor-pointer hover:border-accent/40 ${
-                image.selected ? "border-accent/50 ring-1 ring-accent/20" : "border-border"
+              className={`group relative rounded-lg border overflow-hidden transition-all cursor-pointer ${
+                inCompare
+                  ? "border-accent ring-2 ring-accent/40"
+                  : compareMode && compareFull
+                    ? "border-border opacity-50 hover:opacity-70"
+                    : image.selected
+                      ? "border-accent/50 ring-1 ring-accent/20 hover:border-accent/40"
+                      : "border-border hover:border-accent/40"
               }`}
             >
               {/* Image */}
               <div
                 className="aspect-square bg-bg"
-                onClick={() => onImageClick(image)}
+                onClick={() => {
+                  if (compareMode) {
+                    if (inCompare || !compareFull) toggleCompare(image);
+                  } else {
+                    onImageClick(image);
+                  }
+                }}
               >
                 <img
                   src={image.image_url}
@@ -297,9 +550,18 @@ export default function DatasetGrid({
                     {image.target_age}y
                   </div>
                 )}
+                {inCompare && (
+                  <div
+                    className="w-5 h-5 rounded-full bg-accent text-bg flex items-center justify-center text-[10px] font-bold"
+                    title={`Position #${compareIdx + 1} in comparison`}
+                  >
+                    {compareIdx + 1}
+                  </div>
+                )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

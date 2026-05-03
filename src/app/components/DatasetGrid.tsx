@@ -16,6 +16,7 @@ interface TimelineImage {
   model_used: string;
   selected: boolean;
   favorite: boolean;
+  rating?: number;
   target_age?: number | null;
   created_at: string;
 }
@@ -306,6 +307,7 @@ interface CharacterImage {
   model_used: string;
   selected: boolean;
   favorite: boolean;
+  rating?: number;
   target_age?: number | null;
   created_at: string;
 }
@@ -318,6 +320,7 @@ interface DatasetGridProps {
   onLightboxOpen: (src: string) => void;
   onToggleSelect: (imageId: string, selected: boolean) => void;
   onToggleFavorite: (imageId: string, favorite: boolean) => void;
+  onSetRating?: (imageId: string, rating: number) => void;
   onDeleteImage: (imageId: string) => void;
 }
 
@@ -329,6 +332,7 @@ export default function DatasetGrid({
   onLightboxOpen,
   onToggleSelect,
   onToggleFavorite,
+  onSetRating,
   onDeleteImage,
 }: DatasetGridProps) {
   const [activeCategory, setActiveCategory] = useState<CategoryId | "all">("all");
@@ -790,6 +794,25 @@ export default function DatasetGrid({
               <div className="absolute bottom-0 left-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
                 <p className="text-xs text-text truncate">{image.subcategory.replace(/_/g, " ")}</p>
                 <p className="text-xs text-muted truncate">{image.model_used}</p>
+                {/* 5-star rating (Module 14) */}
+                {onSetRating && (
+                  <div className="flex items-center gap-0.5 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        onClick={() => onSetRating(image._id, (image.rating || 0) === star ? 0 : star)}
+                        className={`text-[12px] leading-none transition-colors ${
+                          (image.rating || 0) >= star
+                            ? "text-accent"
+                            : "text-muted/50 hover:text-accent/70"
+                        }`}
+                        title={`Rate ${star} star${star === 1 ? "" : "s"}`}
+                      >
+                        ★
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Actions - top right */}

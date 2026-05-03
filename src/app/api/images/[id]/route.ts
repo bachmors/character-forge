@@ -34,6 +34,10 @@ export async function PUT(
     if (body.favorite !== undefined) updateData.favorite = body.favorite;
     if (body.category !== undefined) updateData.category = body.category;
     if (body.subcategory !== undefined) updateData.subcategory = body.subcategory;
+    if (body.rating !== undefined) {
+      const r = Number(body.rating);
+      updateData.rating = Number.isFinite(r) && r >= 0 && r <= 5 ? r : 0;
+    }
 
     // When marking as favorite, unmark others in the same pose category
     if (body.favorite === true) {

@@ -246,6 +246,67 @@ export function buildAgeInstruction(age: number | null | undefined): string {
   return ` Generate this character at approximately ${age} years old. Maintain their core facial features, bone structure, and distinguishing characteristics, but naturally age/de-age them to match the target age. Show appropriate signs of aging (or youth) in skin, hair, body posture, and facial features.`;
 }
 
+// Pose library (Module 16). Each preset has a description that gets
+// injected into the prompt when the user picks it.
+export interface PosePreset {
+  id: string;
+  label: string;
+  category: "standing" | "seated" | "action" | "emotional" | "professional" | "cinematic";
+  description: string;
+}
+
+export const POSE_LIBRARY: PosePreset[] = [
+  // Standing
+  { id: "neutral_standing", label: "Neutral standing", category: "standing", description: "standing in a relaxed neutral pose, weight evenly distributed, arms at sides" },
+  { id: "arms_crossed", label: "Arms crossed", category: "standing", description: "standing with arms crossed across the chest, closed body language" },
+  { id: "hands_in_pockets", label: "Hands in pockets", category: "standing", description: "standing with hands in pockets, casual relaxed posture" },
+  { id: "leaning", label: "Leaning", category: "standing", description: "leaning casually against a wall or surface, weight on one leg" },
+  { id: "power_pose", label: "Power pose", category: "standing", description: "wide confident power stance, hands on hips, chest open, chin slightly raised" },
+  { id: "relaxed_standing", label: "Relaxed", category: "standing", description: "standing in a loose easy posture, slight lean, low tension" },
+  // Seated
+  { id: "chair", label: "Seated in chair", category: "seated", description: "seated upright in a chair, feet on the floor, hands resting" },
+  { id: "floor", label: "Seated on floor", category: "seated", description: "seated on the floor, knees up, casual relaxed posture" },
+  { id: "edge", label: "On edge of surface", category: "seated", description: "perched on the edge of a desk or windowsill, one leg dangling" },
+  { id: "cross_legged", label: "Cross-legged", category: "seated", description: "seated cross-legged, hands resting on knees, centered grounded posture" },
+  { id: "slouched", label: "Slouched", category: "seated", description: "seated slouched into the chair, low energy, rounded shoulders" },
+  // Action
+  { id: "walking", label: "Walking", category: "action", description: "mid-stride walking forward, natural gait, sense of movement" },
+  { id: "running", label: "Running", category: "action", description: "running mid-stride, dynamic motion, hair and clothing in motion" },
+  { id: "fighting_stance", label: "Fighting stance", category: "action", description: "balanced fighting stance, weight low, hands raised in guard" },
+  { id: "dancing", label: "Dancing", category: "action", description: "in motion mid-dance, expressive limbs, sense of rhythm" },
+  { id: "reaching", label: "Reaching", category: "action", description: "reaching toward something off-camera, body extended, focused gaze" },
+  // Emotional
+  { id: "praying", label: "Praying", category: "emotional", description: "hands clasped or palms together, head slightly bowed, contemplative" },
+  { id: "crying", label: "Crying", category: "emotional", description: "tears on the face, expression of grief, shoulders slightly hunched" },
+  { id: "laughing", label: "Laughing", category: "emotional", description: "head tilted back in laughter, mouth open, eyes crinkled with joy" },
+  { id: "covering_face", label: "Covering face", category: "emotional", description: "hands raised to cover the face, hiding emotion or vulnerability" },
+  { id: "looking_up", label: "Looking up", category: "emotional", description: "head tilted upward, eyes looking up, contemplative or hopeful" },
+  // Professional
+  { id: "at_desk", label: "At desk", category: "professional", description: "seated at a desk, focused on work, papers or laptop in front" },
+  { id: "presenting", label: "Presenting", category: "professional", description: "mid-presentation gesture, one hand raised, confident open stance" },
+  { id: "handshake", label: "Handshake", category: "professional", description: "extending hand for a handshake, professional posture" },
+  { id: "on_phone", label: "On phone", category: "professional", description: "phone held to the ear or in hand, mid-conversation expression" },
+  // Cinematic
+  { id: "over_shoulder", label: "Looking over shoulder", category: "cinematic", description: "looking back over the shoulder toward the camera, body turned away" },
+  { id: "silhouette", label: "Silhouette", category: "cinematic", description: "standing as a backlit silhouette, identifiable by outline only" },
+  { id: "walking_away", label: "Walking away", category: "cinematic", description: "walking away from the camera into the distance, back to viewer" },
+  { id: "doorway", label: "Through doorway", category: "cinematic", description: "framed in a doorway, threshold composition, light from beyond" },
+];
+
+/**
+ * Returns a CHARACTER POSE block when a known pose id is provided.
+ */
+export function buildPoseInstruction(poseId?: string | null): string {
+  if (!poseId) return "";
+  const def = POSE_LIBRARY.find((p) => p.id === poseId);
+  if (!def) return "";
+  return [
+    "CHARACTER POSE:",
+    `${def.description}.`,
+    "The character should be in this specific pose. Maintain natural body proportions and physics.",
+  ].join(" ");
+}
+
 export const CLOTHING_DESCRIPTIONS: Record<string, string> = {
   default: "",
   casual: "casual everyday clothing like jeans and a comfortable top",

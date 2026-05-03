@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { GoogleGenAI } from "@google/genai";
 import { requireUser } from "@/lib/auth";
-import { buildAgeInstruction, buildClothingInstruction } from "@/lib/prompts";
+import { buildAgeInstruction, buildClothingInstruction, buildPoseInstruction } from "@/lib/prompts";
 import {
   buildPsychologyInstruction,
   buildBackstoryInstruction,
@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
       emotionalStateOverride,
       cinematography,
       artStyle,
+      poseId,
     }: {
       prompt: string;
       referenceImageUrl?: string;
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
       emotionalStateOverride?: { id?: string; custom?: string } | null;
       cinematography?: CinematographyChoice | null;
       artStyle?: string | null;
+      poseId?: string | null;
     } = await req.json();
 
     if (!prompt) {
@@ -62,6 +64,7 @@ export async function POST(req: NextRequest) {
     const moodboardInstruction = buildMoodboardInstruction(characterProfile?.moodboard);
     const cinematographyInstruction = buildCinematographyInstruction(cinematography);
     const artStyleInstruction = buildArtStyleInstruction(artStyle);
+    const poseInstruction = buildPoseInstruction(poseId);
 
     // Order: clothing → age → psychology → background → visual style →
     //        cinematography → art style. Art style is last so its aesthetic
@@ -72,6 +75,7 @@ export async function POST(req: NextRequest) {
     if (psychInstruction) finalPrompt = `${finalPrompt}\n\n${psychInstruction.trim()}`;
     if (backstoryInstruction) finalPrompt = `${finalPrompt}\n\n${backstoryInstruction.trim()}`;
     if (moodboardInstruction) finalPrompt = `${finalPrompt}\n\n${moodboardInstruction.trim()}`;
+    if (poseInstruction) finalPrompt = `${finalPrompt}\n\n${poseInstruction.trim()}`;
     if (cinematographyInstruction) finalPrompt = `${finalPrompt}\n\n${cinematographyInstruction.trim()}`;
     if (artStyleInstruction) finalPrompt = `${finalPrompt}\n\n${artStyleInstruction.trim()}`;
 

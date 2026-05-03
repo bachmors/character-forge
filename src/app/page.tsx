@@ -36,6 +36,7 @@ interface CharacterImage {
   model_used: string;
   selected: boolean;
   favorite: boolean;
+  rating?: number;
   created_at: string;
 }
 
@@ -198,6 +199,24 @@ function HomeContent() {
     }
   };
 
+  // Set image rating (0–5)
+  const handleSetRating = async (imageId: string, rating: number) => {
+    try {
+      const res = await fetch(`/api/images/${imageId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating }),
+      });
+      if (res.ok) {
+        setImages((prev) =>
+          prev.map((img) => (img._id === imageId ? { ...img, rating } : img)),
+        );
+      }
+    } catch (err) {
+      console.error("Failed to set rating:", err);
+    }
+  };
+
   // Delete image
   const handleDeleteImage = async (imageId: string) => {
     try {
@@ -278,6 +297,7 @@ function HomeContent() {
                   onLightboxOpen={setLightboxSrc}
                   onToggleSelect={handleToggleSelect}
                   onToggleFavorite={handleToggleFavorite}
+                  onSetRating={handleSetRating}
                   onDeleteImage={handleDeleteImage}
                 />
               )}

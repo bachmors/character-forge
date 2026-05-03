@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import {
-  STANDARD_POSES, CATEGORIES, CLOTHING_STYLES, CLOTHING_DESCRIPTIONS, AGE_PRESETS,
+  STANDARD_POSES, CATEGORIES, CLOTHING_STYLES, CLOTHING_DESCRIPTIONS, AGE_PRESETS, POSE_LIBRARY,
   buildPrompt, type CharacterTraits, type PoseDefinition,
 } from "@/lib/prompts";
 import { EMOTIONAL_STATES, type CharacterProfile } from "@/lib/profile";
@@ -77,6 +77,9 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
   const [emotionalOverride, setEmotionalOverride] = useState<string>("");
   const [emotionalOverrideCustom, setEmotionalOverrideCustom] = useState<string>("");
   const [cinematography, setCinematography] = useState<CinematographyState>(DEFAULT_CINEMATOGRAPHY_STATE);
+  // Pose library (Module 16). "" means "no pose override — let the pose
+  // template / custom prompt decide".
+  const [poseId, setPoseId] = useState<string>("");
 
   // Batch generation state
   const [batchGenerating, setBatchGenerating] = useState(false);
@@ -191,6 +194,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
             lighting: cinematography.lighting,
           },
           artStyle: cinematography.artStyle,
+          poseId: poseId || undefined,
         }),
       });
       const data = await res.json();
@@ -199,7 +203,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       }
       return { image_url: data.image_url, model_used: data.model_used };
     },
-    [character.base_image_url, character.profile, emotionalOverride, emotionalOverrideCustom, cinematography],
+    [character.base_image_url, character.profile, emotionalOverride, emotionalOverrideCustom, cinematography, poseId],
   );
 
   // Compress and save an image
@@ -1177,6 +1181,160 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
 
           {/* Cinematography + art style (Modules 7 + 9) */}
           <CinematographyControls value={cinematography} onChange={setCinematography} />
+
+          {/* Pose library (Module 16) */}
+          <details className="border border-border rounded-lg group">
+            <summary className="px-3 py-2 cursor-pointer text-sm text-muted hover:text-text transition-colors flex items-center justify-between list-none">
+              <span>
+                Pose library{" "}
+                <span className="text-xs text-muted/60">
+                  ({poseId
+                    ? POSE_LIBRARY.find((p) => p.id === poseId)?.label || poseId
+                    : "none"})
+                </span>
+              </span>
+              <span className="text-muted/60 transition-transform group-open:rotate-90">›</span>
+            </summary>
+            <div className="px-3 pb-3 pt-1 space-y-3">
+              <button
+                type="button"
+                onClick={() => setPoseId("")}
+                className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${
+                  poseId === ""
+                    ? "bg-accent/15 text-accent border-accent/30"
+                    : "border-border text-muted hover:text-text hover:border-border-strong"
+                }`}
+              >
+                None (use pose template)
+              </button>
+              {(["standing", "seated", "action", "emotional", "professional", "cinematic"] as const).map((cat) => {
+                const list = POSE_LIBRARY.filter((p) => p.category === cat);
+                return (
+                  <div key={cat}>
+                    <p className="text-[11px] uppercase tracking-wide text-muted/70 mb-1 capitalize">
+                      {cat}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {list.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setPoseId(p.id)}
+                          title={p.description}
+                          className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${
+                            poseId === p.id
+                              ? "bg-accent/15 text-accent border-accent/30"
+                              : "border-border text-muted hover:text-text hover:border-border-strong"
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              <p className="text-[11px] text-muted/60">
+                Picking a pose appends a CHARACTER POSE clause to the prompt that overrides
+                the pose template above. Useful when you want a pose the standard list
+                doesn&apos;t cover.
+              </p>
+            </div>
+          </details>
+
+          {/* Smart prompt suggestions (Module 13) */}
+          <details className="border border-border rounded-lg group">
+            <summary className="px-3 py-2 cursor-pointer text-sm text-muted hover:text-text transition-colors flex items-center justify-between list-none">
+              <span>Suggest a scene</span>
+              <span className="text-muted/60 transition-transform group-open:rotate-90">›</span>
+            </summary>
+            <div className="px-3 pb-3 pt-1 space-y-2">
+              <p className="text-[11px] text-muted/70">
+                Auto-generated from this character&apos;s saved profile. Click one to drop it
+                into the custom prompt and switch to Custom mode.
+              </p>
+              {(() => {
+                const psy = character.profile?.psychology;
+                const back = character.profile?.backstory;
+                const name = character.name;
+                const motivation = psy?.motivation;
+                const fear = psy?.fear;
+                const emotion = psy?.emotional_state || "contemplative";
+                const profession = back?.profession;
+                const formative = back?.formative_experience;
+                const arcStart = back?.arc_state_start;
+                const arcEnd = back?.arc_state_end;
+                const turning = back?.arc_turning_point;
+
+                const suggestions: string[] = [];
+                if (psy && fear) {
+                  suggestions.push(
+                    `${name} alone in an empty room at night, the moment they realize their deepest fear (${fear}) might come true.`,
+                  );
+                }
+                if (psy && emotion) {
+                  suggestions.push(
+                    `${name} in a quiet moment of ${emotion}, framed cinematically, environment fading into background.`,
+                  );
+                }
+                if (motivation) {
+                  suggestions.push(
+                    `${name} at the height of pursuing what they want most (${motivation}), eyes lit with intent.`,
+                  );
+                }
+                if (back && profession) {
+                  suggestions.push(
+                    `${name} in a setting that reflects their ${profession.toLowerCase()} background, gear of their trade visible, in a private unguarded moment.`,
+                  );
+                }
+                if (formative) {
+                  suggestions.push(
+                    `${name} at the moment the formative experience returns to them: "${formative.slice(0, 120)}".`,
+                  );
+                }
+                if (arcStart) {
+                  suggestions.push(
+                    `${name} at the start of their arc — ${arcStart.slice(0, 100)} — pre-transformation.`,
+                  );
+                }
+                if (arcEnd) {
+                  suggestions.push(
+                    `${name} at the end of their arc — ${arcEnd.slice(0, 100)} — post-transformation, the changed self.`,
+                  );
+                }
+                if (turning) {
+                  suggestions.push(
+                    `${name} at the turning point: ${turning.slice(0, 120)}.`,
+                  );
+                }
+                if (suggestions.length === 0) {
+                  suggestions.push(
+                    `${name} alone in a meaningful place, a single decisive moment captured.`,
+                    `${name} caught off-guard, an unguarded expression revealing who they are when no one is watching.`,
+                  );
+                }
+                return (
+                  <div className="space-y-1.5">
+                    {suggestions.slice(0, 5).map((s, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => {
+                          setSelectedCategory("custom");
+                          setIsCustom(true);
+                          setCustomPrompt(s);
+                          setEditedPrompt(s);
+                        }}
+                        className="block w-full text-left px-3 py-2 rounded-lg border border-border bg-bg/40 hover:bg-accent/5 hover:border-accent/30 text-xs text-text/90 transition-colors"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </details>
 
           {/* Category selector */}
           <div>

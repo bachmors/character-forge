@@ -35,6 +35,8 @@ export interface SessionData {
   favoriteModels?: string[];
   /** Default model id used when the user hasn't picked one. */
   defaultModel?: string;
+  /** Venice-specific: when true, generations request safe_mode: true. Defaults to false (uncensored). */
+  veniceSafeMode?: boolean;
 }
 
 const sessionOptions = {

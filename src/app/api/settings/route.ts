@@ -16,6 +16,7 @@ export async function GET() {
       apiKeys: masked,
       defaultModel: session.defaultModel || "gemini-3.1-flash-image-preview",
       favoriteModels: session.favoriteModels || [],
+      veniceSafeMode: session.veniceSafeMode === true,
       hasKeys: {
         googleAi: !!keys.googleAi,
         openAi: !!keys.openAi,
@@ -58,6 +59,9 @@ export async function POST(req: NextRequest) {
     }
     if (Array.isArray(body.favoriteModels)) {
       session.favoriteModels = body.favoriteModels.filter((x: unknown) => typeof x === "string");
+    }
+    if (typeof body.veniceSafeMode === "boolean") {
+      session.veniceSafeMode = body.veniceSafeMode;
     }
 
     await session.save();

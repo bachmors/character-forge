@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getDb, getModelsDb } from "@/lib/mongodb";
 import { requireUser } from "@/lib/auth";
-import { getProviderForModel, FALLBACK_IMAGE_MODELS, PROVIDERS } from "@/lib/providers";
+import {
+  getProviderForModel,
+  FALLBACK_IMAGE_MODELS,
+  PROVIDERS,
+  getCuratedModel,
+} from "@/lib/providers";
 
 /**
  * Patterns used to filter the shared `ai_models_db.models` collection
@@ -88,8 +93,26 @@ export async function GET(req: NextRequest) {
       description?: string;
       is_custom?: boolean;
       custom_provider_id?: string;
+      uncensored?: boolean;
     }> = [];
     let usedFallback = false;
+
+    // Always seed the result with curated models from IMPLEMENTED providers
+    // so Venice/Gemini are visible regardless of whether the shared
+    // ai_models_db registry happens to contain them. The registry merge
+    // below de-dupes by id, so registry entries can still override the
+    // names we use here.
+    for (const m of FALLBACK_IMAGE_MODELS) {
+      const provider = PROVIDERS.find((p) => p.id === m.provider);
+      if (!provider?.implemented) continue;
+      normalised.push({
+        id: m.id,
+        name: m.name,
+        provider: m.provider,
+        provider_implemented: true,
+        uncensored: m.uncensored,
+      });
+    }
 
     // User-defined custom-provider models always live alongside the
     // registry models, marked with is_custom=true so the UI can badge them.
@@ -129,7 +152,9 @@ export async function GET(req: NextRequest) {
       const docs = (await db.collection<ModelDoc>("models").find({}).limit(2000).toArray()).filter(
         looksLikeImageGen,
       );
-      normalised = docs.map((d) => {
+      // Append registry rows to the curated seed; the de-dupe step below
+      // keeps the LAST occurrence per id so registry overrides curated.
+      const fromRegistry = docs.map((d) => {
         const id = String(d.id || d.model_id || d.name || "");
         const providerFromMatch = getProviderForModel(id)?.id;
         const provider =
@@ -143,10 +168,14 @@ export async function GET(req: NextRequest) {
           provider_implemented:
             PROVIDERS.find((p) => p.id === provider)?.implemented ?? false,
           description: d.description,
+          // Carry the curated uncensored flag onto registry rows so the UI
+          // doesn't lose the badge if the registry shadows a curated model.
+          uncensored: getCuratedModel(id)?.uncensored,
         };
       });
+      normalised.push(...fromRegistry);
     } catch (err) {
-      console.warn("ai_models_db not reachable, using fallback list:", err);
+      console.warn("ai_models_db not reachable; relying on curated seed:", err);
     }
 
     if (normalised.length === 0) {
@@ -157,6 +186,7 @@ export async function GET(req: NextRequest) {
         provider: m.provider,
         provider_implemented:
           PROVIDERS.find((p) => p.id === m.provider)?.implemented ?? false,
+        uncensored: m.uncensored,
       }));
     }
 
@@ -168,13 +198,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // De-duplicate by id while preserving first occurrence (registry might list duplicates).
-    const seen = new Set<string>();
-    const out = filtered.filter((m) => {
-      if (seen.has(m.id)) return false;
-      seen.add(m.id);
-      return true;
-    });
+    // De-duplicate by id, preserving the LAST occurrence so registry rows
+    // override the curated seed (and a real entry for "fluently-xl" beats
+    // the fallback row of the same id).
+    const lastIndex = new Map<string, number>();
+    filtered.forEach((m, i) => lastIndex.set(m.id, i));
+    const out = filtered.filter((m, i) => lastIndex.get(m.id) === i);
 
     return NextResponse.json({ models: out, used_fallback: usedFallback });
   } catch (error) {

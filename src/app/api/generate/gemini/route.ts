@@ -22,6 +22,7 @@ import {
   parseImageResponse,
   type CustomAuthType,
 } from "@/lib/customProviders";
+import { isVeniceImageModel } from "@/lib/providers/venice";
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,7 +58,8 @@ export async function POST(req: NextRequest) {
     // age, psychology, cinematography, etc.) have been composed.
     const requestedModel = modelId || "gemini-3.1-flash-image-preview";
     const isGemini = /^gemini/i.test(requestedModel);
-    const isVenice = /^(fluently|flux-?dev|venice)/i.test(requestedModel);
+    // Match every Venice image-gen model id (the 9 known to this build).
+    const isVenice = isVeniceImageModel(requestedModel);
 
     // Custom-provider lookup: any model id the user added under one of
     // their custom providers is matched here regardless of name pattern.
@@ -216,6 +218,8 @@ export async function POST(req: NextRequest) {
           prompt: finalPrompt,
           aspectRatio: "1:1",
           imageSize: "1K",
+          // safe_mode comes from per-user Settings; defaults to false.
+          safeMode: session.veniceSafeMode === true,
         });
         return NextResponse.json({
           image_url: result.imageDataUrl,

@@ -119,6 +119,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       provider: string;
       provider_implemented: boolean;
       is_custom?: boolean;
+      uncensored?: boolean;
     }>
   >([]);
   const [selectedModel, setSelectedModel] = useState<string>("gemini-3.1-flash-image-preview");
@@ -1385,8 +1386,10 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
               ) : (
                 availableModels.map((m) => (
                   <option key={m.id} value={m.id}>
+                    {m.uncensored ? "🔓 " : ""}
                     {m.name} ({m.is_custom ? "custom" : m.provider}
-                    {!m.provider_implemented && !m.is_custom ? " · scaffold" : ""})
+                    {!m.provider_implemented && !m.is_custom ? " · scaffold" : ""}
+                    {m.uncensored ? " · uncensored" : ""})
                   </option>
                 ))
               )}

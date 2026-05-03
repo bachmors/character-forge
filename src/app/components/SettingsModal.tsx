@@ -21,6 +21,7 @@ interface ModelEntry {
   provider: string;
   provider_implemented: boolean;
   is_custom?: boolean;
+  uncensored?: boolean;
 }
 
 interface ModelsResponse {
@@ -62,6 +63,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [models, setModels] = useState<ModelEntry[]>([]);
   const [favoriteModels, setFavoriteModels] = useState<string[]>([]);
   const [defaultModel, setDefaultModel] = useState<string>("gemini-3.1-flash-image-preview");
+  const [veniceSafeMode, setVeniceSafeMode] = useState<boolean>(false);
   const [providerFilter, setProviderFilter] = useState<string>("all");
   const [availabilityFilter, setAvailabilityFilter] = useState<"all" | "available">("available");
   const [saving, setSaving] = useState(false);
@@ -111,6 +113,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
         const s = await sRes.json();
         setDefaultModel(s.defaultModel || "gemini-3.1-flash-image-preview");
         setFavoriteModels(s.favoriteModels || []);
+        setVeniceSafeMode(Boolean(s.veniceSafeMode));
       }
       if (mRes.ok) {
         const data: ModelsResponse = await mRes.json();
@@ -268,6 +271,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
           apiKeys,
           favoriteModels,
           defaultModel,
+          veniceSafeMode,
         }),
       });
       // Refresh provider statuses after the save.
@@ -400,6 +404,23 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                         Test
                       </button>
                     </div>
+                    {/* Venice-only: Safe Mode toggle. */}
+                    {p.id === "venice" && (
+                      <label className="flex items-center gap-2 text-[11px] text-muted pt-1">
+                        <input
+                          type="checkbox"
+                          checked={veniceSafeMode}
+                          onChange={(e) => setVeniceSafeMode(e.target.checked)}
+                          className="accent-accent"
+                        />
+                        Safe mode{" "}
+                        <span className="text-muted/60">
+                          {veniceSafeMode
+                            ? "ON — content filtering applied"
+                            : "OFF — uncensored (default)"}
+                        </span>
+                      </label>
+                    )}
                   </div>
                 );
               })}
@@ -749,6 +770,14 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                           {m.is_custom && (
                             <span className="text-[9px] uppercase tracking-wide px-1 rounded bg-accent/15 text-accent border border-accent/30">
                               custom
+                            </span>
+                          )}
+                          {m.uncensored && (
+                            <span
+                              className="text-[9px] uppercase tracking-wide px-1 rounded bg-danger/15 text-danger border border-danger/30"
+                              title="No content filters"
+                            >
+                              uncensored
                             </span>
                           )}
                         </p>

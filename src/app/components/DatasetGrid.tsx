@@ -6,6 +6,296 @@ import { downloadImage } from "@/lib/imageUtils";
 
 const MAX_COMPARE = 4;
 
+interface TimelineImage {
+  _id: string;
+  character_id: string;
+  category: string;
+  subcategory: string;
+  image_url: string;
+  prompt_used: string;
+  model_used: string;
+  selected: boolean;
+  favorite: boolean;
+  target_age?: number | null;
+  created_at: string;
+}
+
+interface TimelineRenderArgs {
+  images: TimelineImage[];
+  sortAxis: "date" | "age";
+  setTimelineSort: (s: "date" | "age") => void;
+  compareMode: boolean;
+  compareIds: string[];
+  toggleCompare: (img: TimelineImage) => void;
+  onImageClick: (img: TimelineImage) => void;
+  onLightboxOpen: (src: string) => void;
+  onToggleSelect: (id: string, selected: boolean) => void;
+  onToggleFavorite: (id: string, favorite: boolean) => void;
+  onDeleteImage: (id: string) => void;
+  handleDownload: (img: TimelineImage) => void;
+}
+
+function formatDate(d: string | undefined): string {
+  if (!d) return "—";
+  try {
+    return new Date(d).toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+/**
+ * Vertical timeline of generations. Two sort axes:
+ *   - "date": newest first (default), groups events by formatted date.
+ *   - "age":  smallest target age → largest, with images that have no
+ *             age value placed first under an "As reference" header.
+ */
+function renderTimeline(args: TimelineRenderArgs) {
+  const { images, sortAxis, setTimelineSort } = args;
+
+  const hasAnyAge = images.some((i) => typeof i.target_age === "number" && i.target_age > 0);
+
+  // Build sorted/grouped event list.
+  type Event = { image: TimelineImage; rail: string };
+  let events: Event[] = [];
+  if (sortAxis === "age" && hasAnyAge) {
+    const withAge = images
+      .filter((i) => typeof i.target_age === "number" && (i.target_age as number) > 0)
+      .slice()
+      .sort((a, b) => (a.target_age || 0) - (b.target_age || 0));
+    const withoutAge = images.filter(
+      (i) => !(typeof i.target_age === "number" && (i.target_age as number) > 0),
+    );
+    events = [
+      ...withoutAge.map((image) => ({ image, rail: "As reference" })),
+      ...withAge.map((image) => ({ image, rail: `Age ${image.target_age}` })),
+    ];
+  } else {
+    events = images
+      .slice()
+      .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
+      .map((image) => ({
+        image,
+        rail: image.created_at
+          ? new Date(image.created_at).toLocaleDateString(undefined, {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })
+          : "—",
+      }));
+  }
+
+  // Compute "show rail label" only when it differs from the previous event so
+  // we get clustered date/age headers like a real activity feed.
+  const rows = events.map((ev, idx) => ({
+    ...ev,
+    showRailLabel: idx === 0 || events[idx - 1].rail !== ev.rail,
+  }));
+
+  return (
+    <div>
+      {/* Timeline sort toggle (only meaningful when there are any age-tagged images) */}
+      <div className="flex items-center gap-2 mb-4 text-xs text-muted">
+        <span>Sort by:</span>
+        <button
+          onClick={() => setTimelineSort("date")}
+          className={`px-2.5 py-1 rounded transition-colors border ${
+            sortAxis === "date"
+              ? "bg-accent/15 text-accent border-accent/30"
+              : "border-border text-muted hover:text-text hover:border-border-strong"
+          }`}
+        >
+          Generation date
+        </button>
+        <button
+          onClick={() => setTimelineSort("age")}
+          disabled={!hasAnyAge}
+          className={`px-2.5 py-1 rounded transition-colors border disabled:opacity-40 disabled:cursor-not-allowed ${
+            sortAxis === "age"
+              ? "bg-accent/15 text-accent border-accent/30"
+              : "border-border text-muted hover:text-text hover:border-border-strong"
+          }`}
+          title={
+            hasAnyAge
+              ? "Show this character's life from young to old"
+              : "Generate at least one image with an age to enable this view"
+          }
+        >
+          Character age
+        </button>
+      </div>
+
+      {/* Vertical timeline */}
+      <ol className="relative space-y-4">
+        {/* The vertical rail */}
+        <div
+          aria-hidden="true"
+          className="absolute left-3 md:left-4 top-2 bottom-2 w-px bg-border"
+        />
+        {rows.map(({ image, rail, showRailLabel }) => {
+          const compareIdx = args.compareIds.indexOf(image._id);
+          const inCompare = compareIdx !== -1;
+          const compareFull = !inCompare && args.compareIds.length >= MAX_COMPARE;
+          const promptSnippet =
+            (image.prompt_used || "").trim().slice(0, 140) +
+            ((image.prompt_used || "").length > 140 ? "…" : "");
+          return (
+            <li key={image._id} className="relative pl-10 md:pl-12">
+              {/* Rail label (shown once per group) */}
+              {showRailLabel && (
+                <div className="text-[11px] uppercase tracking-wide text-muted/70 mb-1 ml-0">
+                  {rail}
+                </div>
+              )}
+              {/* Dot on the rail */}
+              <span
+                aria-hidden="true"
+                className={`absolute left-2 md:left-3 top-3 w-3 h-3 rounded-full border-2 ${
+                  inCompare
+                    ? "bg-accent border-accent"
+                    : image.favorite
+                      ? "bg-accent/40 border-accent"
+                      : "bg-bg border-border"
+                }`}
+              />
+              <article
+                className={`flex gap-3 p-2.5 rounded-lg border bg-bg/40 transition-all ${
+                  inCompare
+                    ? "border-accent ring-1 ring-accent/30"
+                    : args.compareMode && compareFull
+                      ? "border-border opacity-50"
+                      : "border-border hover:border-accent/30"
+                }`}
+              >
+                {/* Thumbnail */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (args.compareMode) {
+                      if (inCompare || !compareFull) args.toggleCompare(image);
+                    } else {
+                      args.onImageClick(image);
+                    }
+                  }}
+                  className="w-20 h-20 md:w-24 md:h-24 rounded border border-border bg-bg overflow-hidden shrink-0 group relative"
+                  title="Open"
+                >
+                  <img
+                    src={image.image_url}
+                    alt={image.subcategory}
+                    className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform"
+                  />
+                  {inCompare && (
+                    <span className="absolute top-1 left-1 w-5 h-5 rounded-full bg-accent text-bg flex items-center justify-center text-[10px] font-bold">
+                      {compareIdx + 1}
+                    </span>
+                  )}
+                </button>
+
+                {/* Body */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm font-medium text-text capitalize truncate">
+                        {image.subcategory.replace(/_/g, " ")}
+                      </span>
+                      {typeof image.target_age === "number" && image.target_age > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full border border-accent/40 text-accent text-[10px] font-semibold">
+                          {image.target_age}y
+                        </span>
+                      )}
+                      {image.favorite && (
+                        <span className="text-accent text-[10px]" title="Favorite">★</span>
+                      )}
+                      {image.selected && (
+                        <span
+                          className="text-accent text-[10px]"
+                          title="Selected for dataset"
+                        >
+                          ✓
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-muted shrink-0">
+                      {formatDate(image.created_at)}
+                    </span>
+                  </div>
+
+                  <div className="text-[11px] text-muted mt-0.5">
+                    <span className="capitalize">{(image.category || "").replace(/_/g, " ")}</span>
+                    <span className="text-muted/60"> · </span>
+                    <span>{image.model_used || "—"}</span>
+                  </div>
+
+                  {promptSnippet && (
+                    <p
+                      className="text-[11px] text-muted/80 mt-1 leading-snug line-clamp-2"
+                      title={image.prompt_used}
+                    >
+                      {promptSnippet}
+                    </p>
+                  )}
+
+                  {/* Inline actions */}
+                  <div className="mt-2 flex items-center gap-1 flex-wrap">
+                    <button
+                      onClick={() => args.onToggleFavorite(image._id, !image.favorite)}
+                      className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
+                        image.favorite
+                          ? "bg-accent/15 text-accent border-accent/30"
+                          : "border-border text-muted hover:text-text hover:border-border-strong"
+                      }`}
+                    >
+                      {image.favorite ? "★ Favorite" : "Favorite"}
+                    </button>
+                    <button
+                      onClick={() => args.onToggleSelect(image._id, !image.selected)}
+                      className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${
+                        image.selected
+                          ? "bg-accent/15 text-accent border-accent/30"
+                          : "border-border text-muted hover:text-text hover:border-border-strong"
+                      }`}
+                    >
+                      {image.selected ? "✓ In dataset" : "Add to dataset"}
+                    </button>
+                    <button
+                      onClick={() => args.onLightboxOpen(image.image_url)}
+                      className="text-[11px] px-2 py-0.5 rounded border border-border text-muted hover:text-text hover:border-border-strong transition-colors"
+                    >
+                      View
+                    </button>
+                    <button
+                      onClick={() => args.handleDownload(image)}
+                      className="text-[11px] px-2 py-0.5 rounded border border-border text-muted hover:text-text hover:border-border-strong transition-colors"
+                    >
+                      Download
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm("Delete this image?")) args.onDeleteImage(image._id);
+                      }}
+                      className="text-[11px] px-2 py-0.5 rounded border border-border text-muted hover:text-danger hover:border-danger/40 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </article>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
 interface CharacterImage {
   _id: string;
   character_id: string;
@@ -42,6 +332,8 @@ export default function DatasetGrid({
   onDeleteImage,
 }: DatasetGridProps) {
   const [activeCategory, setActiveCategory] = useState<CategoryId | "all">("all");
+  const [viewMode, setViewMode] = useState<"gallery" | "timeline">("gallery");
+  const [timelineSort, setTimelineSort] = useState<"date" | "age">("date");
   const [compareMode, setCompareMode] = useState(false);
   // Ordered list of image _ids in the compare set (preserves the order in
   // which the user picked them so cards render left→right deterministically).
@@ -152,22 +444,50 @@ export default function DatasetGrid({
             </button>
           );
         })}
-        <button
-          onClick={() => {
-            if (compareMode) exitCompare();
-            else setCompareMode(true);
-          }}
-          className={`ml-auto px-3 py-1 rounded text-sm transition-colors whitespace-nowrap border ${
-            compareMode
-              ? "bg-accent/15 text-accent border-accent/30"
-              : "text-muted border-border hover:text-text hover:border-border-strong"
-          }`}
-          title="Select 2–4 images to compare side by side"
-        >
-          {compareMode
-            ? `Comparing (${compareImages.length}/${MAX_COMPARE}) — Exit`
-            : "Compare"}
-        </button>
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          {/* View mode: Gallery / Timeline */}
+          <div className="flex border border-border rounded overflow-hidden">
+            <button
+              onClick={() => setViewMode("gallery")}
+              className={`px-2.5 py-1 text-xs whitespace-nowrap transition-colors ${
+                viewMode === "gallery"
+                  ? "bg-accent/15 text-accent"
+                  : "text-muted hover:text-text"
+              }`}
+              title="Grid view"
+            >
+              Gallery
+            </button>
+            <button
+              onClick={() => setViewMode("timeline")}
+              className={`px-2.5 py-1 text-xs whitespace-nowrap transition-colors border-l border-border ${
+                viewMode === "timeline"
+                  ? "bg-accent/15 text-accent"
+                  : "text-muted hover:text-text"
+              }`}
+              title="Timeline view of generations over time or character age"
+            >
+              Timeline
+            </button>
+          </div>
+
+          <button
+            onClick={() => {
+              if (compareMode) exitCompare();
+              else setCompareMode(true);
+            }}
+            className={`px-3 py-1 rounded text-sm transition-colors whitespace-nowrap border ${
+              compareMode
+                ? "bg-accent/15 text-accent border-accent/30"
+                : "text-muted border-border hover:text-text hover:border-border-strong"
+            }`}
+            title="Select 2–4 images to compare side by side"
+          >
+            {compareMode
+              ? `Comparing (${compareImages.length}/${MAX_COMPARE}) — Exit`
+              : "Compare"}
+          </button>
+        </div>
       </div>
 
       {/* Standard Poses Checklist (collapsed by default) */}
@@ -382,7 +702,7 @@ export default function DatasetGrid({
         </div>
       )}
 
-      {/* Image Grid */}
+      {/* Image area — Gallery (grid) or Timeline */}
       {filteredImages.length === 0 ? (
         <div className="text-center py-16">
           <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="mx-auto opacity-30 text-muted">
@@ -395,6 +715,21 @@ export default function DatasetGrid({
             Go to the Generate tab to create new images
           </p>
         </div>
+      ) : viewMode === "timeline" ? (
+        renderTimeline({
+          images: filteredImages,
+          sortAxis: timelineSort,
+          setTimelineSort,
+          compareMode,
+          compareIds,
+          toggleCompare,
+          onImageClick,
+          onLightboxOpen,
+          onToggleSelect,
+          onToggleFavorite,
+          onDeleteImage,
+          handleDownload,
+        })
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {/* Reference image as first item */}

@@ -104,7 +104,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
 
   // Generate a single image via Gemini
   const generateImage = useCallback(
-    async (prompt: string, age: number | null): Promise<{ image_url: string; model_used: string } | null> => {
+    async (prompt: string, age: number | null, clothing: string | null): Promise<{ image_url: string; model_used: string } | null> => {
       const res = await fetch("/api/generate/gemini", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -112,6 +112,7 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
           prompt,
           referenceImageUrl: character.base_image_url || undefined,
           targetAge: age,
+          clothingDescription: clothing,
         }),
       });
       const data = await res.json();
@@ -165,7 +166,8 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
 
     try {
       const age = getTargetAge();
-      const result = await generateImage(prompt, age);
+      const clothing = getClothingDescription() ?? null;
+      const result = await generateImage(prompt, age, clothing);
       if (result) {
         setGeneratedImage(result.image_url);
         setGeneratedModelUsed(result.model_used);
@@ -212,14 +214,15 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
       setBatchProgress({ current: i, total: poses.length, currentPose: pose.label });
 
       try {
+        const clothing = getClothingDescription() ?? null;
         const prompt = buildPrompt(
           pose,
           character.traits as CharacterTraits,
           character.name,
-          getClothingDescription(),
+          clothing ?? undefined,
         );
         const age = getTargetAge();
-        const result = await generateImage(prompt, age);
+        const result = await generateImage(prompt, age, clothing);
         if (result) {
           await saveImage(
             result.image_url,

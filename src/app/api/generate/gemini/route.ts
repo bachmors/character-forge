@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { GoogleGenAI } from "@google/genai";
 import { requireUser } from "@/lib/auth";
-import { buildAgeInstruction } from "@/lib/prompts";
+import { buildAgeInstruction, buildClothingInstruction } from "@/lib/prompts";
 
 export async function POST(req: NextRequest) {
   try {
     await requireUser();
-    const { prompt, referenceImageUrl, targetAge } = await req.json();
+    const { prompt, referenceImageUrl, targetAge, clothingDescription } = await req.json();
 
     if (!prompt) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
@@ -22,7 +22,14 @@ export async function POST(req: NextRequest) {
     const ageInstruction = buildAgeInstruction(
       ageNum !== null && Number.isFinite(ageNum) ? ageNum : null,
     );
-    const finalPrompt = ageInstruction ? `${prompt}\n\n${ageInstruction.trim()}` : prompt;
+    const clothingInstruction = buildClothingInstruction(
+      typeof clothingDescription === "string" ? clothingDescription : null,
+    );
+    // Append clothing first (most likely to be overridden by the reference),
+    // then age, so both instructions land at the end of the user message.
+    let finalPrompt = prompt;
+    if (clothingInstruction) finalPrompt = `${finalPrompt}\n\n${clothingInstruction.trim()}`;
+    if (ageInstruction) finalPrompt = `${finalPrompt}\n\n${ageInstruction.trim()}`;
 
     const session = await getSession();
     const apiKey = session.apiKeys?.googleAi || process.env.GOOGLE_AI_API_KEY;

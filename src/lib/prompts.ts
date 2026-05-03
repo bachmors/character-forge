@@ -223,6 +223,19 @@ export const AGE_PRESETS = [
 export type AgePresetId = (typeof AGE_PRESETS)[number]["id"];
 
 /**
+ * Returns a strong, explicit instruction string to append to a generation
+ * prompt that forces Gemini to apply the chosen clothing style and
+ * override any clothing visible in the reference image.
+ *
+ * Returns an empty string when no clothing override is provided
+ * (i.e. user kept "default" / character base clothing).
+ */
+export function buildClothingInstruction(clothing: string | null | undefined): string {
+  if (!clothing || !clothing.trim()) return "";
+  return ` IMPORTANT: The character MUST be wearing ${clothing.trim()}. This clothing style is REQUIRED — override any clothing visible in the reference image. The reference image is ONLY for facial features, body type, hair, skin, and identity, NOT for clothing.`;
+}
+
+/**
  * Returns an instruction string to append to a generation prompt for the
  * requested age, or an empty string when no age modification is requested.
  *

@@ -83,6 +83,19 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentPose: "" });
   const [batchErrors, setBatchErrors] = useState<string[]>([]);
 
+  // Transformation diptych (Module 10) state
+  const [showXformPicker, setShowXformPicker] = useState(false);
+  const [xformPreset, setXformPreset] = useState<string>("clean_dirty");
+  const [xformCustomBefore, setXformCustomBefore] = useState("");
+  const [xformCustomAfter, setXformCustomAfter] = useState("");
+  const [xformGenerating, setXformGenerating] = useState(false);
+  const [xformSaving, setXformSaving] = useState(false);
+  const [xformError, setXformError] = useState<string | null>(null);
+  const [xformResult, setXformResult] = useState<{
+    image_url: string;
+    prompt_used: string;
+  } | null>(null);
+
   // Turnaround Sheet (Module 6) state
   const [showTurnPicker, setShowTurnPicker] = useState(false);
   const [turnLayout, setTurnLayout] = useState<"simple" | "standard" | "full">("standard");
@@ -310,6 +323,106 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
     setBatchGenerating(false);
   };
 
+  // ── Transformation diptych (Module 10) ───────────────────────────────
+  const XFORM_PRESETS: Array<{ id: string; label: string; before: string; after: string }> = [
+    { id: "clean_dirty", label: "Clean → Dirty / Weathered", before: "pristine, clean, well-groomed", after: "weathered, dirty, battle-worn, with grime and damage to clothing and skin" },
+    { id: "healthy_injured", label: "Healthy → Injured / Scarred", before: "healthy, unscarred, vital", after: "visibly injured and scarred, with healing wounds and tired eyes" },
+    { id: "well_dressed_ragged", label: "Well-dressed → Ragged", before: "wearing impeccable, well-cut clothing", after: "wearing torn, ragged clothing, fraying edges and worn fabric" },
+    { id: "civilian_uniform", label: "Civilian → Uniformed", before: "in civilian clothing, relaxed bearing", after: "in a military or uniformed role, upright disciplined posture" },
+    { id: "human_supernatural", label: "Human → Supernatural", before: "fully human, warm-toned skin and eyes", after: "subtly supernatural — luminous or unusual eyes, faint otherworldly aura, otherwise the same person" },
+    { id: "innocent_experienced", label: "Innocent → Experienced", before: "innocent and naive, soft open expression, untouched eyes", after: "experienced and weathered, harder eyes, jaw set, the same person but life has marked them" },
+    { id: "confident_broken", label: "Confident → Broken", before: "confident, upright, eyes meeting the camera", after: "broken and exhausted, slumped posture, eyes downcast or hollow" },
+    { id: "broken_rebuilt", label: "Broken → Rebuilt", before: "broken and depleted, slumped, hollow eyes", after: "rebuilt and grounded, scars visible but composed and present" },
+    { id: "alive_ghost", label: "Alive → Ghost / Memory", before: "fully present and alive, solid colors, warm skin tones", after: "translucent and faded as if a memory, slightly desaturated, edges softening into background" },
+  ];
+
+  const handleGenerateTransformation = async () => {
+    setXformGenerating(true);
+    setXformError(null);
+    setXformResult(null);
+    try {
+      let beforeText = "";
+      let afterText = "";
+      if (xformPreset === "custom") {
+        beforeText = xformCustomBefore.trim();
+        afterText = xformCustomAfter.trim();
+        if (!beforeText || !afterText) {
+          setXformError("Fill in both Before and After");
+          setXformGenerating(false);
+          return;
+        }
+      } else {
+        const def = XFORM_PRESETS.find((p) => p.id === xformPreset);
+        if (!def) {
+          setXformError("Pick a transformation");
+          setXformGenerating(false);
+          return;
+        }
+        beforeText = def.before;
+        afterText = def.after;
+      }
+      const res = await fetch("/api/generate/transformation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          character: {
+            name: character.name,
+            description: character.description,
+            reference_image_url: character.base_image_url || undefined,
+          },
+          beforeLabel: "BEFORE",
+          beforeText,
+          afterLabel: "AFTER",
+          afterText,
+          cinematography: {
+            cameraAngle: cinematography.cameraAngle,
+            lens: cinematography.lens,
+            lighting: cinematography.lighting,
+          },
+          artStyle: cinematography.artStyle,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setXformError(data.error || "Generation failed");
+        return;
+      }
+      setXformResult(data);
+    } catch (err) {
+      setXformError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setXformGenerating(false);
+    }
+  };
+
+  const handleSaveTransformation = async () => {
+    if (!xformResult) return;
+    setXformSaving(true);
+    try {
+      const compressed = await compressImage(xformResult.image_url);
+      await fetch("/api/images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          character_id: character._id,
+          category: "transformation",
+          subcategory: xformPreset,
+          image_url: compressed,
+          prompt_used: xformResult.prompt_used,
+          model_used: "gemini-3.1-flash-image-preview",
+        }),
+      });
+      onImageGenerated();
+      setXformResult(null);
+      setShowXformPicker(false);
+    } catch (err) {
+      setXformError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setXformSaving(false);
+    }
+  };
+  // ─────────────────────────────────────────────────────────────────────
+
   // ── Turnaround Sheet (Module 6) ──────────────────────────────────────
   const handleGenerateTurnaround = async () => {
     setTurnGenerating(true);
@@ -467,11 +580,19 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowTurnPicker((v) => !v)}
-            disabled={batchGenerating || generating || sheetGenerating || turnGenerating}
+            disabled={batchGenerating || generating || sheetGenerating || turnGenerating || xformGenerating}
             className="px-3 py-1.5 rounded-lg border border-accent/30 text-accent text-sm hover:bg-accent/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title="Generate a turnaround sheet (multiple angles in one image)"
           >
             Turnaround
+          </button>
+          <button
+            onClick={() => setShowXformPicker((v) => !v)}
+            disabled={batchGenerating || generating || sheetGenerating || turnGenerating || xformGenerating}
+            className="px-3 py-1.5 rounded-lg border border-accent/30 text-accent text-sm hover:bg-accent/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Generate a before/after transformation diptych"
+          >
+            Transformation
           </button>
           <button
             onClick={() => setShowSheetPicker((v) => !v)}
@@ -515,6 +636,122 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
           {batchErrors.length > 0 && (
             <div className="mt-2 text-xs text-danger">
               {batchErrors.length} error(s): {batchErrors[batchErrors.length - 1]}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Transformation picker (Module 10) */}
+      {showXformPicker && (
+        <div className="mb-6 p-4 bg-surface border border-accent/30 rounded-lg space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h4 className="text-sm text-accent font-medium">Transformation diptych</h4>
+              <p className="text-[11px] text-muted/80">
+                Same character, before &amp; after, side by side. Same camera angle and
+                framing in both halves; only the transformation changes.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowXformPicker(false)}
+              className="text-muted hover:text-text text-xs"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-xs text-muted">Transformation</label>
+            <div className="flex flex-wrap gap-1.5">
+              {XFORM_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setXformPreset(p.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${
+                    xformPreset === p.id
+                      ? "bg-accent/15 text-accent border-accent/30"
+                      : "border-border text-muted hover:text-text hover:border-border-strong"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+              <button
+                onClick={() => setXformPreset("custom")}
+                className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${
+                  xformPreset === "custom"
+                    ? "bg-accent/15 text-accent border-accent/30"
+                    : "border-border text-muted hover:text-text hover:border-border-strong"
+                }`}
+              >
+                Custom…
+              </button>
+            </div>
+            {xformPreset === "custom" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                <input
+                  type="text"
+                  value={xformCustomBefore}
+                  onChange={(e) => setXformCustomBefore(e.target.value)}
+                  placeholder="Before: state of the character…"
+                  className="bg-bg border border-border rounded-lg px-2 py-1.5 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
+                />
+                <input
+                  type="text"
+                  value={xformCustomAfter}
+                  onChange={(e) => setXformCustomAfter(e.target.value)}
+                  placeholder="After: state of the character…"
+                  className="bg-bg border border-border rounded-lg px-2 py-1.5 text-sm text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 transition-colors"
+                />
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={handleGenerateTransformation}
+            disabled={xformGenerating || generating || batchGenerating || sheetGenerating || turnGenerating}
+            className="px-4 py-2 rounded-lg bg-accent text-bg text-sm font-medium hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {xformGenerating ? "Generating diptych…" : "Generate transformation"}
+          </button>
+
+          {xformError && (
+            <div className="p-2 bg-danger/10 border border-danger/20 rounded text-xs text-danger">
+              {xformError}
+            </div>
+          )}
+
+          {xformResult && (
+            <div className="border border-border rounded-lg p-3 bg-bg/40">
+              <div className="rounded overflow-hidden bg-bg flex items-center justify-center">
+                <img
+                  src={xformResult.image_url}
+                  alt="Transformation"
+                  className="max-h-[60vh] w-auto object-contain"
+                />
+              </div>
+              <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={handleSaveTransformation}
+                  disabled={xformSaving}
+                  className="px-4 py-1.5 rounded-lg bg-success/15 text-success border border-success/30 text-sm font-medium hover:bg-success/25 transition-colors disabled:opacity-50"
+                >
+                  {xformSaving ? "Saving…" : "Save to library"}
+                </button>
+                <button
+                  onClick={handleGenerateTransformation}
+                  disabled={xformGenerating || xformSaving}
+                  className="px-4 py-1.5 rounded-lg border border-border text-muted hover:text-text hover:border-border-strong text-sm transition-colors"
+                >
+                  Regenerate
+                </button>
+                <button
+                  onClick={() => setXformResult(null)}
+                  className="text-muted hover:text-text text-xs"
+                >
+                  Discard
+                </button>
+              </div>
             </div>
           )}
         </div>

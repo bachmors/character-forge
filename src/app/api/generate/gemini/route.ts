@@ -14,6 +14,14 @@ import {
   buildArtStyleInstruction,
   type CinematographyChoice,
 } from "@/lib/cinematography";
+import { ObjectId } from "mongodb";
+import { getDb } from "@/lib/mongodb";
+import {
+  buildAuthHeaders,
+  decryptKey,
+  parseImageResponse,
+  type CustomAuthType,
+} from "@/lib/customProviders";
 
 export async function POST(req: NextRequest) {
   try {
@@ -51,10 +59,47 @@ export async function POST(req: NextRequest) {
     const isGemini = /^gemini/i.test(requestedModel);
     const isVenice = /^(fluently|flux-?dev|venice)/i.test(requestedModel);
 
-    if (!isGemini && !isVenice) {
+    // Custom-provider lookup: any model id the user added under one of
+    // their custom providers is matched here regardless of name pattern.
+    interface CustomProviderRecord {
+      _id: unknown;
+      baseUrl: string;
+      apiKeyEnc: string | null;
+      apiFormat: string;
+      imageEndpoint: string;
+      authType: string;
+      authHeaderName: string | null;
+      models: Array<{
+        modelId: string;
+        type: string;
+        defaultParams?: Record<string, unknown>;
+        enabled?: boolean;
+      }>;
+    }
+    let customProviderDoc: CustomProviderRecord | null = null;
+    try {
+      const userForCustom = await requireUser();
+      const charDb = await getDb();
+      const found = await charDb
+        .collection("custom_providers")
+        .findOne({
+          user_id: new ObjectId(userForCustom._id),
+          "models.modelId": requestedModel,
+        });
+      if (found) customProviderDoc = found as unknown as CustomProviderRecord;
+      // Honour the per-model enabled flag.
+      if (customProviderDoc) {
+        const m = customProviderDoc.models.find((mm) => mm.modelId === requestedModel);
+        if (m && m.enabled === false) customProviderDoc = null;
+      }
+    } catch {
+      // ignore — falls through to built-in routing
+    }
+
+    if (!isGemini && !isVenice && !customProviderDoc) {
       return NextResponse.json(
         {
-          error: `Generation with "${requestedModel}" is not yet implemented in this build. The provider scaffold is in place — see src/lib/providers — but this run still routes Gemini and Venice only.`,
+          error: `Generation with "${requestedModel}" is not yet implemented in this build. The provider scaffold is in place — see src/lib/providers — but this run still routes Gemini, Venice, and user-defined custom providers only.`,
           requested_model: requestedModel,
           category: "not_implemented",
         },
@@ -102,6 +147,56 @@ export async function POST(req: NextRequest) {
     if (artStyleInstruction) finalPrompt = `${finalPrompt}\n\n${artStyleInstruction.trim()}`;
 
     const session = await getSession();
+
+    // ── Custom user-defined provider branch.
+    if (customProviderDoc) {
+      try {
+        const apiKey = decryptKey(customProviderDoc.apiKeyEnc);
+        const headers: Record<string, string> = {
+          ...buildAuthHeaders(
+            customProviderDoc.authType as CustomAuthType,
+            apiKey,
+            customProviderDoc.authHeaderName,
+          ),
+          "Content-Type": "application/json",
+        };
+        const modelDef = customProviderDoc.models.find((mm) => mm.modelId === requestedModel);
+        const defaults = modelDef?.defaultParams || {};
+        const url = `${customProviderDoc.baseUrl}${customProviderDoc.imageEndpoint}`;
+        // OpenAI-compatible body shape: { model, prompt, ...defaults }.
+        // For format=custom we send the same — providers can interpret it
+        // however they like; defaults give the user an escape hatch for
+        // non-standard fields.
+        const body: Record<string, unknown> = {
+          model: requestedModel,
+          prompt: finalPrompt,
+          ...defaults,
+        };
+        const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
+        const parsed = await parseImageResponse(res);
+        return NextResponse.json({
+          image_url: parsed.imageDataUrl,
+          text_response: parsed.textResponse || "",
+          model_used: requestedModel,
+          provider: `custom:${customProviderDoc._id}`,
+        });
+      } catch (err) {
+        const raw = err instanceof Error ? err.message : String(err);
+        const lower = raw.toLowerCase();
+        let category: "rate" | "auth" | "size" | "network" | "other" = "other";
+        let status = 500;
+        if (/quota|rate.?limit|429/.test(lower)) {
+          category = "rate";
+          status = 429;
+        } else if (/api[ _]?key|unauthorized|401|403/.test(lower)) {
+          category = "auth";
+          status = 401;
+        } else if (/fetch|network|timeout|enotfound/.test(lower)) {
+          category = "network";
+        }
+        return NextResponse.json({ error: raw, category, raw }, { status });
+      }
+    }
 
     // ── Venice branch (text-only — Venice doesn't accept reference images).
     if (isVenice) {

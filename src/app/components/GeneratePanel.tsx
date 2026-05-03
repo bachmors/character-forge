@@ -113,7 +113,13 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
   // Model selector (Phase A). Loaded from /api/models filtered by available
   // providers. Defaults to whatever the user marked as default in Settings.
   const [availableModels, setAvailableModels] = useState<
-    Array<{ id: string; name: string; provider: string; provider_implemented: boolean }>
+    Array<{
+      id: string;
+      name: string;
+      provider: string;
+      provider_implemented: boolean;
+      is_custom?: boolean;
+    }>
   >([]);
   const [selectedModel, setSelectedModel] = useState<string>("gemini-3.1-flash-image-preview");
 
@@ -1379,8 +1385,8 @@ export default function GeneratePanel({ character, images, onImageGenerated, onL
               ) : (
                 availableModels.map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.name} ({m.provider}
-                    {!m.provider_implemented ? " · scaffold" : ""})
+                    {m.name} ({m.is_custom ? "custom" : m.provider}
+                    {!m.provider_implemented && !m.is_custom ? " · scaffold" : ""})
                   </option>
                 ))
               )}

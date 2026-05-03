@@ -20,11 +20,32 @@ interface ModelEntry {
   name: string;
   provider: string;
   provider_implemented: boolean;
+  is_custom?: boolean;
 }
 
 interface ModelsResponse {
   models: ModelEntry[];
   used_fallback?: boolean;
+}
+
+interface CustomModel {
+  modelId: string;
+  displayName: string;
+  type: "image" | "text" | "vision";
+  defaultParams?: Record<string, unknown>;
+  enabled?: boolean;
+}
+
+interface CustomProvider {
+  _id: string;
+  providerName: string;
+  baseUrl: string;
+  has_key: boolean;
+  apiFormat: "openai" | "custom";
+  imageEndpoint: string;
+  authType: "bearer" | "header" | "none";
+  authHeaderName: string | null;
+  models: CustomModel[];
 }
 
 interface TestResult {
@@ -46,15 +67,43 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [usedFallback, setUsedFallback] = useState(false);
+  const [customProviders, setCustomProviders] = useState<CustomProvider[]>([]);
+  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [cpDraft, setCpDraft] = useState({
+    providerName: "",
+    baseUrl: "",
+    apiKey: "",
+    apiFormat: "openai" as "openai" | "custom",
+    imageEndpoint: "/images/generations",
+    authType: "bearer" as "bearer" | "header" | "none",
+    authHeaderName: "",
+  });
+  const [cpModelDrafts, setCpModelDrafts] = useState<CustomModel[]>([]);
+  const [cpModelInput, setCpModelInput] = useState({
+    modelId: "",
+    displayName: "",
+    type: "image" as "image" | "text" | "vision",
+    defaultParams: "",
+  });
+
+  const reloadCustomProviders = async () => {
+    const res = await fetch("/api/custom-providers");
+    if (res.ok) {
+      const data = await res.json();
+      setCustomProviders(Array.isArray(data) ? data : []);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     (async () => {
-      const [pRes, sRes, mRes] = await Promise.all([
+      const [pRes, sRes, mRes, cpRes] = await Promise.all([
         fetch("/api/providers"),
         fetch("/api/settings"),
         fetch("/api/models"),
+        fetch("/api/custom-providers"),
       ]);
       if (cancelled) return;
       if (pRes.ok) setProviders(await pRes.json());
@@ -68,11 +117,139 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
         setModels(data.models || []);
         setUsedFallback(Boolean(data.used_fallback));
       }
+      if (cpRes.ok) {
+        const data = await cpRes.json();
+        setCustomProviders(Array.isArray(data) ? data : []);
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [open]);
+
+  const resetCpForm = () => {
+    setCpDraft({
+      providerName: "",
+      baseUrl: "",
+      apiKey: "",
+      apiFormat: "openai",
+      imageEndpoint: "/images/generations",
+      authType: "bearer",
+      authHeaderName: "",
+    });
+    setCpModelDrafts([]);
+    setCpModelInput({ modelId: "", displayName: "", type: "image", defaultParams: "" });
+    setShowCustomForm(false);
+    setEditingId(null);
+  };
+
+  const startEditCp = (cp: CustomProvider) => {
+    setEditingId(cp._id);
+    setCpDraft({
+      providerName: cp.providerName,
+      baseUrl: cp.baseUrl,
+      apiKey: "",
+      apiFormat: cp.apiFormat,
+      imageEndpoint: cp.imageEndpoint,
+      authType: cp.authType,
+      authHeaderName: cp.authHeaderName || "",
+    });
+    setCpModelDrafts(cp.models);
+    setShowCustomForm(true);
+  };
+
+  const handleAddModelToDraft = () => {
+    const id = cpModelInput.modelId.trim();
+    if (!id) return;
+    let defaultParams: Record<string, unknown> = {};
+    if (cpModelInput.defaultParams.trim()) {
+      try {
+        defaultParams = JSON.parse(cpModelInput.defaultParams);
+      } catch {
+        alert("Default parameters must be valid JSON");
+        return;
+      }
+    }
+    setCpModelDrafts((prev) => [
+      ...prev,
+      {
+        modelId: id,
+        displayName: cpModelInput.displayName.trim() || id,
+        type: cpModelInput.type,
+        defaultParams,
+        enabled: true,
+      },
+    ]);
+    setCpModelInput({ modelId: "", displayName: "", type: "image", defaultParams: "" });
+  };
+
+  const handleSaveCustomProvider = async () => {
+    if (!cpDraft.providerName.trim() || !cpDraft.baseUrl.trim()) {
+      alert("Provider name and base URL are required");
+      return;
+    }
+    const body = {
+      providerName: cpDraft.providerName,
+      baseUrl: cpDraft.baseUrl,
+      apiKey: cpDraft.apiKey || undefined,
+      apiFormat: cpDraft.apiFormat,
+      imageEndpoint: cpDraft.imageEndpoint,
+      authType: cpDraft.authType,
+      authHeaderName: cpDraft.authType === "header" ? cpDraft.authHeaderName : null,
+      models: cpModelDrafts,
+    };
+    const res = editingId
+      ? await fetch(`/api/custom-providers/${editingId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+      : await fetch("/api/custom-providers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+    if (res.ok) {
+      await reloadCustomProviders();
+      // Refresh the model list so new custom models appear in the picker.
+      const mRes = await fetch("/api/models");
+      if (mRes.ok) {
+        const data: ModelsResponse = await mRes.json();
+        setModels(data.models || []);
+      }
+      resetCpForm();
+    } else {
+      alert("Could not save custom provider");
+    }
+  };
+
+  const handleDeleteCustomProvider = async (id: string) => {
+    if (!confirm("Delete this custom provider and all its models?")) return;
+    const res = await fetch(`/api/custom-providers/${id}`, { method: "DELETE" });
+    if (res.ok) await reloadCustomProviders();
+  };
+
+  const handleTestCustomProvider = async (id: string) => {
+    const res = await fetch(`/api/custom-providers/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "test" }),
+    });
+    const data = await res.json();
+    alert(data.ok ? "✓ Connected" : `✗ ${data.error || "Test failed"}`);
+  };
+
+  const toggleCpModelEnabled = async (cp: CustomProvider, modelId: string) => {
+    const newModels = cp.models.map((m) =>
+      m.modelId === modelId ? { ...m, enabled: m.enabled === false ? true : false } : m,
+    );
+    await fetch(`/api/custom-providers/${cp._id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ models: newModels }),
+    });
+    await reloadCustomProviders();
+  };
 
   if (!open) return null;
 
@@ -229,6 +406,279 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
             </div>
           </section>
 
+          {/* Custom user-defined providers */}
+          <section className="space-y-3 mb-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm text-accent font-medium">Custom Providers</h3>
+                <p className="text-xs text-muted/80">
+                  Add your own provider — local server, niche API, anything OpenAI-compatible.
+                  Saved per user in MongoDB so they sync across devices.
+                </p>
+              </div>
+              {!showCustomForm && (
+                <button
+                  onClick={() => setShowCustomForm(true)}
+                  className="px-2.5 py-1 text-xs rounded-lg border border-accent/30 text-accent hover:bg-accent/10 transition-colors"
+                >
+                  + Add Custom Provider
+                </button>
+              )}
+            </div>
+
+            {/* List existing */}
+            {customProviders.length > 0 && (
+              <div className="space-y-2">
+                {customProviders.map((cp) => (
+                  <div
+                    key={cp._id}
+                    className="border border-border rounded-lg p-3 bg-bg/40 text-xs space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div>
+                        <span className="text-text font-medium text-sm">{cp.providerName}</span>
+                        <span className="ml-2 text-[10px] uppercase tracking-wide text-muted/70">
+                          {cp.apiFormat} · {cp.authType}
+                        </span>
+                        <p className="text-muted/70 mt-0.5 truncate font-mono text-[11px]">
+                          {cp.baseUrl}
+                          {cp.imageEndpoint}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleTestCustomProvider(cp._id)}
+                          className="px-2 py-0.5 rounded border border-border text-muted hover:text-text hover:border-border-strong"
+                        >
+                          Test
+                        </button>
+                        <button
+                          onClick={() => startEditCp(cp)}
+                          className="px-2 py-0.5 rounded border border-border text-muted hover:text-text hover:border-border-strong"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCustomProvider(cp._id)}
+                          className="px-2 py-0.5 rounded border border-border text-muted hover:text-danger hover:border-danger/40"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                    {cp.models.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {cp.models.map((m) => (
+                          <button
+                            key={m.modelId}
+                            onClick={() => toggleCpModelEnabled(cp, m.modelId)}
+                            className={`px-1.5 py-0.5 rounded text-[10px] border ${
+                              m.enabled === false
+                                ? "border-border text-muted/50 line-through"
+                                : "border-accent/30 text-accent bg-accent/5"
+                            }`}
+                            title={m.enabled === false ? "Disabled — click to enable" : "Click to disable"}
+                          >
+                            {m.displayName}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Form */}
+            {showCustomForm && (
+              <div className="border border-accent/30 rounded-lg p-3 bg-accent/5 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] text-muted mb-0.5">Provider name</label>
+                    <input
+                      type="text"
+                      value={cpDraft.providerName}
+                      onChange={(e) => setCpDraft({ ...cpDraft, providerName: e.target.value })}
+                      placeholder="MyLocalServer"
+                      className="w-full bg-bg border border-border rounded px-2 py-1 text-xs text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-muted mb-0.5">Base URL</label>
+                    <input
+                      type="text"
+                      value={cpDraft.baseUrl}
+                      onChange={(e) => setCpDraft({ ...cpDraft, baseUrl: e.target.value })}
+                      placeholder="http://localhost:8080/v1"
+                      className="w-full bg-bg border border-border rounded px-2 py-1 text-xs text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 font-mono"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] text-muted mb-0.5">
+                      API key {editingId && <span className="text-muted/60">(leave blank to keep existing)</span>}
+                    </label>
+                    <input
+                      type="password"
+                      value={cpDraft.apiKey}
+                      onChange={(e) => setCpDraft({ ...cpDraft, apiKey: e.target.value })}
+                      placeholder={editingId ? "(unchanged)" : "API key"}
+                      className="w-full bg-bg border border-border rounded px-2 py-1 text-xs text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-muted mb-0.5">API format</label>
+                    <select
+                      value={cpDraft.apiFormat}
+                      onChange={(e) =>
+                        setCpDraft({
+                          ...cpDraft,
+                          apiFormat: e.target.value as "openai" | "custom",
+                        })
+                      }
+                      className="w-full bg-bg border border-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-accent/30"
+                    >
+                      <option value="openai">OpenAI-compatible</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-muted mb-0.5">Image endpoint</label>
+                    <input
+                      type="text"
+                      value={cpDraft.imageEndpoint}
+                      onChange={(e) =>
+                        setCpDraft({ ...cpDraft, imageEndpoint: e.target.value })
+                      }
+                      className="w-full bg-bg border border-border rounded px-2 py-1 text-xs text-text font-mono focus:outline-none focus:border-accent/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-muted mb-0.5">Auth type</label>
+                    <select
+                      value={cpDraft.authType}
+                      onChange={(e) =>
+                        setCpDraft({
+                          ...cpDraft,
+                          authType: e.target.value as "bearer" | "header" | "none",
+                        })
+                      }
+                      className="w-full bg-bg border border-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-accent/30"
+                    >
+                      <option value="bearer">Bearer Token</option>
+                      <option value="header">API Key Header</option>
+                      <option value="none">None</option>
+                    </select>
+                  </div>
+                  {cpDraft.authType === "header" && (
+                    <div>
+                      <label className="block text-[11px] text-muted mb-0.5">Header name</label>
+                      <input
+                        type="text"
+                        value={cpDraft.authHeaderName}
+                        onChange={(e) =>
+                          setCpDraft({ ...cpDraft, authHeaderName: e.target.value })
+                        }
+                        placeholder="X-API-Key"
+                        className="w-full bg-bg border border-border rounded px-2 py-1 text-xs text-text font-mono focus:outline-none focus:border-accent/30"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Models in this provider */}
+                <div>
+                  <label className="block text-[11px] text-muted mb-1">Models</label>
+                  {cpModelDrafts.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {cpModelDrafts.map((m, i) => (
+                        <span
+                          key={`${m.modelId}-${i}`}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border text-[11px]"
+                        >
+                          {m.displayName}{" "}
+                          <span className="text-muted/60 font-mono">({m.modelId})</span>
+                          <button
+                            onClick={() =>
+                              setCpModelDrafts((prev) => prev.filter((_, idx) => idx !== i))
+                            }
+                            className="text-muted/70 hover:text-danger"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={cpModelInput.modelId}
+                      onChange={(e) =>
+                        setCpModelInput({ ...cpModelInput, modelId: e.target.value })
+                      }
+                      placeholder="model id (e.g. fluently-xl)"
+                      className="bg-bg border border-border rounded px-2 py-1 text-xs text-text font-mono placeholder:text-muted/50 focus:outline-none focus:border-accent/30"
+                    />
+                    <input
+                      type="text"
+                      value={cpModelInput.displayName}
+                      onChange={(e) =>
+                        setCpModelInput({ ...cpModelInput, displayName: e.target.value })
+                      }
+                      placeholder="display name"
+                      className="bg-bg border border-border rounded px-2 py-1 text-xs text-text placeholder:text-muted/50 focus:outline-none focus:border-accent/30"
+                    />
+                    <select
+                      value={cpModelInput.type}
+                      onChange={(e) =>
+                        setCpModelInput({
+                          ...cpModelInput,
+                          type: e.target.value as "image" | "text" | "vision",
+                        })
+                      }
+                      className="bg-bg border border-border rounded px-2 py-1 text-xs text-text focus:outline-none focus:border-accent/30"
+                    >
+                      <option value="image">Image generation</option>
+                      <option value="text">Text</option>
+                      <option value="vision">Vision</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={cpModelInput.defaultParams}
+                      onChange={(e) =>
+                        setCpModelInput({ ...cpModelInput, defaultParams: e.target.value })
+                      }
+                      placeholder='default params JSON (optional)'
+                      className="bg-bg border border-border rounded px-2 py-1 text-xs text-text font-mono placeholder:text-muted/50 focus:outline-none focus:border-accent/30"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddModelToDraft}
+                    className="mt-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
+                  >
+                    + Add model
+                  </button>
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={resetCpForm}
+                    className="flex-1 py-1.5 rounded border border-border text-muted hover:text-text hover:border-border-strong text-xs transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveCustomProvider}
+                    className="flex-1 py-1.5 rounded bg-accent text-bg font-medium text-xs hover:bg-accent-hover transition-colors"
+                  >
+                    {editingId ? "Update provider" : "Add provider"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+
           {/* Models registry */}
           <section className="space-y-3 mb-6">
             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -294,7 +744,14 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                         ★
                       </button>
                       <div className="flex-1 min-w-0">
-                        <p className="text-text truncate">{m.name}</p>
+                        <p className="text-text truncate flex items-center gap-1">
+                          {m.name}
+                          {m.is_custom && (
+                            <span className="text-[9px] uppercase tracking-wide px-1 rounded bg-accent/15 text-accent border border-accent/30">
+                              custom
+                            </span>
+                          )}
+                        </p>
                         <p className="text-muted/70 truncate text-[10px]">
                           {m.provider}
                           {!m.provider_implemented ? " · scaffold" : ""}

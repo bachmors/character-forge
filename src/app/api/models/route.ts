@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getModelsDb } from "@/lib/mongodb";
+import { ObjectId } from "mongodb";
+import { getDb, getModelsDb } from "@/lib/mongodb";
 import { requireUser } from "@/lib/auth";
 import { getProviderForModel, FALLBACK_IMAGE_MODELS, PROVIDERS } from "@/lib/providers";
 
@@ -85,8 +86,43 @@ export async function GET(req: NextRequest) {
       provider: string;
       provider_implemented: boolean;
       description?: string;
+      is_custom?: boolean;
+      custom_provider_id?: string;
     }> = [];
     let usedFallback = false;
+
+    // User-defined custom-provider models always live alongside the
+    // registry models, marked with is_custom=true so the UI can badge them.
+    try {
+      const user = await requireUser();
+      const charDb = await getDb();
+      const customProviders = await charDb
+        .collection("custom_providers")
+        .find({ user_id: new ObjectId(user._id) })
+        .toArray();
+      for (const cp of customProviders) {
+        for (const m of (cp.models as Array<{
+          modelId: string;
+          displayName: string;
+          type: string;
+          enabled?: boolean;
+        }>) || []) {
+          if (m.enabled === false) continue;
+          if (m.type !== "image") continue;
+          normalised.push({
+            id: m.modelId,
+            name: `${m.displayName} (${cp.providerName})`,
+            provider: `custom:${cp._id}`,
+            provider_implemented: true,
+            is_custom: true,
+            custom_provider_id: String(cp._id),
+          });
+        }
+      }
+    } catch {
+      // requireUser was already called above; if we get here it's just a
+      // DB issue — keep going with built-in registry results only.
+    }
 
     try {
       const db = await getModelsDb();

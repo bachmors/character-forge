@@ -23,7 +23,7 @@ import {
   type CustomAuthType,
 } from "@/lib/customProviders";
 import { isVeniceImageModel, veniceModelSupportsRef } from "@/lib/providers/venice";
-import { getUserApiKey, getUserSettings } from "@/lib/userSettings";
+import { getUserApiKey, getUserSettings, resolveGeminiKey } from "@/lib/userSettings";
 
 export async function POST(req: NextRequest) {
   try {
@@ -320,10 +320,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Gemini branch
-    const apiKey =
-      (await getUserApiKey(authUser._id, "google")) ||
-      session.apiKeys?.googleAi ||
-      process.env.GOOGLE_AI_API_KEY;
+    const apiKey = await resolveGeminiKey(authUser._id);
 
     if (!apiKey) {
       return NextResponse.json(

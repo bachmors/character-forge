@@ -6,6 +6,7 @@ import {
   setUserApiKey,
   setUserSettingValue,
   migrateLegacyKeysIfNeeded,
+  hasDefaultGeminiKey,
 } from "@/lib/userSettings";
 
 /**
@@ -64,6 +65,9 @@ export async function GET() {
       favoriteModels: settings.favorite_models,
       veniceSafeMode: settings.venice_safe_mode,
       hasKeys,
+      hasDefaultKeys: {
+        google: hasDefaultGeminiKey(),
+      },
     });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") {

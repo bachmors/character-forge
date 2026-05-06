@@ -121,6 +121,24 @@ export async function setUserSettingValue<T>(
 }
 
 /**
+ * Resolves the Gemini API key for a given user.
+ * Priority: user's own key > legacy session key > GEMINI_DEFAULT_API_KEY env var > GOOGLE_AI_API_KEY env var
+ * Returns null if no key is available.
+ */
+export async function resolveGeminiKey(userId: string): Promise<string | null> {
+  const userKey = await getUserApiKey(userId, "google");
+  if (userKey) return userKey;
+  if (process.env.GEMINI_DEFAULT_API_KEY) return process.env.GEMINI_DEFAULT_API_KEY;
+  if (process.env.GOOGLE_AI_API_KEY) return process.env.GOOGLE_AI_API_KEY;
+  return null;
+}
+
+/** Returns whether a default Gemini key is configured server-side. */
+export function hasDefaultGeminiKey(): boolean {
+  return Boolean(process.env.GEMINI_DEFAULT_API_KEY || process.env.GOOGLE_AI_API_KEY);
+}
+
+/**
  * One-shot migration from the legacy iron-session apiKeys map onto the
  * MongoDB-backed store. Call from /api/settings GET when the MongoDB
  * record is empty so existing users don't lose their keys on the upgrade.

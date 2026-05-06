@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/session";
 import { requireUser } from "@/lib/auth";
-import { getUserApiKey } from "@/lib/userSettings";
+import { resolveGeminiKey } from "@/lib/userSettings";
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,15 +11,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Image data is required" }, { status: 400 });
     }
 
-    const session = await getSession();
-    const apiKey =
-      (await getUserApiKey(authUser._id, "google")) ||
-      session.apiKeys?.googleAi ||
-      process.env.GOOGLE_AI_API_KEY;
+    const apiKey = await resolveGeminiKey(authUser._id);
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Google AI API key not configured." },
+        { error: "No Gemini API key available. Add one in Settings or ask the admin to set GEMINI_DEFAULT_API_KEY." },
         { status: 400 }
       );
     }

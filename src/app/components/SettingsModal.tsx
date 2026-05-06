@@ -72,6 +72,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [veniceSafeMode, setVeniceSafeMode] = useState<boolean>(false);
   const [providerFilter, setProviderFilter] = useState<string>("all");
   const [availabilityFilter, setAvailabilityFilter] = useState<"all" | "available">("available");
+  const [hasDefaultKeys, setHasDefaultKeys] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [usedFallback, setUsedFallback] = useState(false);
@@ -121,6 +122,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
         setDefaultModel(s.defaultModel || "gemini-3.1-flash-image-preview");
         setFavoriteModels(s.favoriteModels || []);
         setVeniceSafeMode(Boolean(s.veniceSafeMode));
+        if (s.hasDefaultKeys) setHasDefaultKeys(s.hasDefaultKeys);
       }
       if (mRes.ok) {
         const data: ModelsResponse = await mRes.json();
@@ -374,6 +376,7 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                         p.has_key ? "available" : "locked"
                       }`
                     : "";
+                const hasDefault = hasDefaultKeys[p.id] === true;
                 const status = t?.pending
                   ? { label: "Testing…", cls: "text-muted" }
                   : t
@@ -381,8 +384,10 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                       ? { label: `✅ Connected${countStr}`, cls: "text-success" }
                       : { label: `✗ ${t.error || "Invalid"}`, cls: "text-danger" }
                     : p.has_key
-                      ? { label: `✅ Key stored${countStr}`, cls: "text-success/80" }
-                      : { label: `🔒 No API key${countStr}`, cls: "text-muted" };
+                      ? { label: `✅ Connected (your key)${countStr}`, cls: "text-success/80" }
+                      : hasDefault
+                        ? { label: `✅ Default key active${countStr}`, cls: "text-success/60" }
+                        : { label: `🔒 No API key${countStr}`, cls: "text-muted" };
                 const showKey = show[p.id];
                 const draft = keysDraft[p.id] ?? "";
 
@@ -410,7 +415,11 @@ export default function SettingsModal({ open, onClose }: SettingsModalProps) {
                         onChange={(e) =>
                           setKeysDraft((prev) => ({ ...prev, [p.id]: e.target.value }))
                         }
-                        placeholder="API key"
+                        placeholder={
+                          !p.has_key && hasDefaultKeys[p.id]
+                            ? "Using shared key — add your own for unlimited access"
+                            : "API key"
+                        }
                         className="flex-1 bg-bg border border-border rounded px-2 py-1.5 text-xs text-text placeholder:text-muted/50 font-mono focus:outline-none focus:border-accent/30 transition-colors"
                       />
                       <button

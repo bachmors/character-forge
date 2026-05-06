@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { type Collection, getCategoryInfo } from "./CollectionModal";
 
 interface Character {
   _id: string;
@@ -12,8 +13,12 @@ interface Character {
 
 interface CharacterSheetProps {
   character: Character;
+  collections?: Collection[];
+  allCollections?: Collection[];
   onUpdate: (updated: Character) => void;
   onLightboxOpen: (src: string) => void;
+  onAddToCollection?: (collectionId: string, characterId: string) => void;
+  onRemoveFromCollection?: (collectionId: string, characterId: string) => void;
 }
 
 const TRAIT_FIELDS = [
@@ -33,12 +38,13 @@ const WARDROBE_PRESETS = [
   { id: "medieval", label: "Medieval", desc: "tunic, leather, period clothing" },
 ];
 
-export default function CharacterSheet({ character, onUpdate, onLightboxOpen }: CharacterSheetProps) {
+export default function CharacterSheet({ character, collections = [], allCollections = [], onUpdate, onLightboxOpen, onAddToCollection, onRemoveFromCollection }: CharacterSheetProps) {
   const [name, setName] = useState(character.name);
   const [description, setDescription] = useState(character.description);
   const [baseImageUrl, setBaseImageUrl] = useState(character.base_image_url);
   const [traits, setTraits] = useState<Record<string, string>>(character.traits || {});
   const [customTraits, setCustomTraits] = useState<Array<{ key: string; value: string }>>([]);
+  const [showCollectionPicker, setShowCollectionPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -196,6 +202,62 @@ export default function CharacterSheet({ character, onUpdate, onLightboxOpen }: 
       </div>
 
       <div className="space-y-5">
+        {/* Collections */}
+        {onAddToCollection && onRemoveFromCollection && (
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <h4 className="text-xs text-muted font-medium uppercase tracking-wider">Collections</h4>
+              <div className="relative">
+                <button onClick={() => setShowCollectionPicker(!showCollectionPicker)} className="w-5 h-5 rounded flex items-center justify-center text-muted hover:text-accent hover:bg-accent/10 transition-colors" title="Add to collection">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                </button>
+                {showCollectionPicker && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowCollectionPicker(false)} />
+                    <div className="absolute left-0 top-7 z-20 bg-surface border border-border-strong rounded-lg shadow-lg py-1 w-52 animate-fade-in">
+                      {allCollections.filter((c) => !c.characterIds.includes(character._id)).length === 0 ? (
+                        <p className="px-3 py-2 text-xs text-muted">Already in all collections</p>
+                      ) : (
+                        allCollections.filter((c) => !c.characterIds.includes(character._id)).map((col) => {
+                          const catInfo = getCategoryInfo(col.category);
+                          return (
+                            <button key={col._id} onClick={() => { onAddToCollection(col._id, character._id); setShowCollectionPicker(false); }}
+                              className="w-full px-3 py-1.5 text-left text-sm text-text hover:bg-bg/50 transition-colors flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: catInfo.color }} />
+                              <span className="truncate">{col.name}</span>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {collections.length === 0 ? (
+                <span className="text-xs text-muted/50 italic">Not in any collection</span>
+              ) : (
+                collections.map((col) => {
+                  const catInfo = getCategoryInfo(col.category);
+                  return (
+                    <span key={col._id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border"
+                      style={{ borderColor: catInfo.color + "40", backgroundColor: catInfo.color + "10", color: catInfo.color }}>
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: catInfo.color }} />
+                      {col.name}
+                      <button onClick={() => onRemoveFromCollection(col._id, character._id)} className="ml-0.5 hover:opacity-60 transition-opacity" title={`Remove from ${col.name}`}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                      </button>
+                    </span>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {(onAddToCollection && onRemoveFromCollection) && <div className="border-t border-border" />}
+
         {/* Base info */}
         <div className="grid grid-cols-1 gap-4">
           <div>

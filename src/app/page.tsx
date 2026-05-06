@@ -16,6 +16,7 @@ import CreateCharacterModal from "./components/CreateCharacterModal";
 import ImageModal from "./components/ImageModal";
 import SettingsModal from "./components/SettingsModal";
 import Lightbox from "./components/Lightbox";
+import CollectionModal, { type Collection } from "./components/CollectionModal";
 
 interface Character {
   _id: string;
@@ -52,6 +53,7 @@ function HomeContent() {
   const searchParams = useSearchParams();
   const initialCharacterId = searchParams?.get("characterId") || null;
   const [characters, setCharacters] = useState<Character[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
   const [images, setImages] = useState<CharacterImage[]>([]);
   const [activeTab, setActiveTab] = useState("dataset");
@@ -60,6 +62,8 @@ function HomeContent() {
   const [viewingImage, setViewingImage] = useState<CharacterImage | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [createFromImage, setCreateFromImage] = useState(false);
+  const [showCollectionModal, setShowCollectionModal] = useState(false);
+  const [editingCollection, setEditingCollection] = useState<Collection | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -110,9 +114,19 @@ function HomeContent() {
     }
   }, [selectedCharacterId]);
 
+  const fetchCollections = useCallback(async () => {
+    try {
+      const res = await fetch("/api/collections");
+      if (res.ok) setCollections(await res.json());
+    } catch (err) {
+      console.error("Failed to fetch collections:", err);
+    }
+  }, []);
+
   useEffect(() => {
     fetchCharacters();
-  }, [fetchCharacters]);
+    fetchCollections();
+  }, [fetchCharacters, fetchCollections]);
 
   useEffect(() => {
     fetchImages();
@@ -229,11 +243,50 @@ function HomeContent() {
     }
   };
 
+  // Collection handlers
+  const handleSaveCollection = async (data: { name: string; category: string; description: string | null }) => {
+    try {
+      if (editingCollection) {
+        const res = await fetch(`/api/collections/${editingCollection._id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+        if (res.ok) { const updated = await res.json(); setCollections((prev) => prev.map((c) => (c._id === updated._id ? updated : c))); }
+      } else {
+        const res = await fetch("/api/collections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+        if (res.ok) { const newCol = await res.json(); setCollections((prev) => [...prev, newCol]); }
+      }
+      setShowCollectionModal(false);
+      setEditingCollection(null);
+    } catch (err) { console.error("Failed to save collection:", err); }
+  };
+
+  const handleDeleteCollection = async (collectionId: string) => {
+    try {
+      const res = await fetch(`/api/collections/${collectionId}`, { method: "DELETE" });
+      if (res.ok) setCollections((prev) => prev.filter((c) => c._id !== collectionId));
+    } catch (err) { console.error("Failed to delete collection:", err); }
+  };
+
+  const handleAddCharToCollection = async (collectionId: string, characterId: string) => {
+    try {
+      const res = await fetch(`/api/collections/${collectionId}/characters`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ characterIds: [characterId] }) });
+      if (res.ok) { const updated = await res.json(); setCollections((prev) => prev.map((c) => (c._id === updated._id ? updated : c))); }
+    } catch (err) { console.error("Failed to add character to collection:", err); }
+  };
+
+  const handleRemoveCharFromCollection = async (collectionId: string, characterId: string) => {
+    try {
+      const res = await fetch(`/api/collections/${collectionId}/characters/${characterId}`, { method: "DELETE" });
+      if (res.ok) { const updated = await res.json(); setCollections((prev) => prev.map((c) => (c._id === updated._id ? updated : c))); }
+    } catch (err) { console.error("Failed to remove character from collection:", err); }
+  };
+
+  const characterCollections = collections.filter((c) => c.characterIds.includes(selectedCharacterId || ""));
+
   return (
     <div className="h-screen flex overflow-hidden">
       {/* Sidebar */}
       <Sidebar
         characters={characters}
+        collections={collections}
         selectedId={selectedCharacterId}
         onSelect={(id) => {
           setSelectedCharacterId(id);
@@ -241,6 +294,11 @@ function HomeContent() {
         }}
         onCreateNew={() => { setCreateFromImage(false); setShowCreateModal(true); }}
         onCreateFromImage={() => { setCreateFromImage(true); setShowCreateModal(true); }}
+        onCreateCollection={() => { setEditingCollection(null); setShowCollectionModal(true); }}
+        onEditCollection={(col) => { setEditingCollection(col); setShowCollectionModal(true); }}
+        onDeleteCollection={handleDeleteCollection}
+        onAddCharacterToCollection={handleAddCharToCollection}
+        onRemoveCharacterFromCollection={handleRemoveCharFromCollection}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
       />
@@ -312,8 +370,12 @@ function HomeContent() {
               {activeTab === "sheet" && (
                 <CharacterSheet
                   character={selectedCharacter}
+                  collections={characterCollections}
+                  allCollections={collections}
                   onUpdate={handleUpdateCharacter}
                   onLightboxOpen={setLightboxSrc}
+                  onAddToCollection={handleAddCharToCollection}
+                  onRemoveFromCollection={handleRemoveCharFromCollection}
                 />
               )}
               {activeTab === "psychology" && (
@@ -347,6 +409,12 @@ function HomeContent() {
       </div>
 
       {/* Modals */}
+      <CollectionModal
+        open={showCollectionModal}
+        editingCollection={editingCollection}
+        onClose={() => { setShowCollectionModal(false); setEditingCollection(null); }}
+        onSave={handleSaveCollection}
+      />
       <CreateCharacterModal
         open={showCreateModal}
         fromImage={createFromImage}

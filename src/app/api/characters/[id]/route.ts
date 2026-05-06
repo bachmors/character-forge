@@ -86,6 +86,11 @@ export async function DELETE(
 
     const id = new ObjectId(params.id);
     await db.collection("character_images").deleteMany({ character_id: id });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await db.collection("collections").updateMany(
+      { characterIds: params.id },
+      { $pull: { characterIds: params.id } } as any
+    );
     await db.collection("characters").deleteOne({ _id: id });
     return NextResponse.json({ success: true });
   } catch (error) {
